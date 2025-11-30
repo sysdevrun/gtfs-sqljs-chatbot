@@ -27,6 +27,28 @@ interface ProgressInfo {
   message: string;
 }
 
+// CORS proxy for fetching GTFS data
+const PROXY_BASE = 'https://gtfs-proxy.sys-dev-run.re/proxy/';
+
+const proxyUrl = (url: string): string => {
+  // Don't proxy relative or absolute paths (local files)
+  if (url.startsWith('./') || url.startsWith('/') || url.startsWith('../')) {
+    return url;
+  }
+
+  // Only proxy remote HTTP/HTTPS URLs
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return PROXY_BASE + parsed.host + parsed.pathname + parsed.search;
+    }
+    return url;
+  } catch {
+    // If URL parsing fails, assume it's a relative path
+    return url;
+  }
+};
+
 let gtfsInstance: GtfsSqlJs | null = null;
 let sqlInstance: SqlJsStatic | null = null;
 
@@ -55,7 +77,10 @@ const gtfsApi = {
     // Get SQL.js instance (loads WASM from CDN)
     const SQL = await getSql();
 
-    gtfsInstance = await GtfsSqlJs.fromZip(url, {
+    // Use proxy for CORS support
+    const proxiedUrl = proxyUrl(url);
+
+    gtfsInstance = await GtfsSqlJs.fromZip(proxiedUrl, {
       onProgress: Comlink.proxy(onProgress),
       SQL,
     });
