@@ -1,4 +1,6 @@
 import * as Comlink from 'comlink';
+import initSqlJs from 'sql.js';
+import type { SqlJsStatic } from 'sql.js';
 import { GtfsSqlJs } from 'gtfs-sqljs';
 import type {
   Stop,
@@ -26,6 +28,18 @@ interface ProgressInfo {
 }
 
 let gtfsInstance: GtfsSqlJs | null = null;
+let sqlInstance: SqlJsStatic | null = null;
+
+// Initialize SQL.js with CDN WASM file
+async function getSql(): Promise<SqlJsStatic> {
+  if (!sqlInstance) {
+    sqlInstance = await initSqlJs({
+      locateFile: (file: string) =>
+        `https://sql.js.org/dist/${file}`,
+    });
+  }
+  return sqlInstance;
+}
 
 const gtfsApi = {
   async initialize(
@@ -38,8 +52,12 @@ const gtfsApi = {
       gtfsInstance = null;
     }
 
+    // Get SQL.js instance (loads WASM from CDN)
+    const SQL = await getSql();
+
     gtfsInstance = await GtfsSqlJs.fromZip(url, {
       onProgress: Comlink.proxy(onProgress),
+      SQL,
     });
   },
 
