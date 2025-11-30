@@ -80,6 +80,14 @@ npm run build
 
 ### Deploy to GitHub Pages
 
+The app automatically deploys to GitHub Pages via GitHub Actions when you push to the `main` branch.
+
+**Automatic deployment (GitHub Actions):**
+- Push to `main` branch triggers the workflow
+- Build artifacts are uploaded and deployed automatically
+- See `.github/workflows/deploy.yml` for configuration
+
+**Manual deployment:**
 ```bash
 npm run deploy
 ```
