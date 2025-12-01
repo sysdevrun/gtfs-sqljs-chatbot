@@ -132,7 +132,10 @@ export function speak(text: string, language: Language = 'fr'): Promise<void> {
     // Cancel any ongoing speech
     window.speechSynthesis.cancel();
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    // Remove markdown formatting that would be read aloud
+    const cleanedText = text.replace(/\*\*/g, '');
+
+    const utterance = new SpeechSynthesisUtterance(cleanedText);
     utterance.lang = SPEECH_LANGUAGE_MAP[language];
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
