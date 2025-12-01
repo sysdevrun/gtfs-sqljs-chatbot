@@ -6,6 +6,16 @@ interface SettingsTabProps {
   onGtfsUrlChange: () => void;
 }
 
+// Build URL with API key in hash
+function buildUrlWithApiKey(apiKey: string): string {
+  const url = new URL(window.location.href);
+  // Clear existing hash and add claude-key
+  const params = new URLSearchParams();
+  params.set('claude-key', apiKey);
+  url.hash = params.toString();
+  return url.toString();
+}
+
 export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
   const { apiKey, gtfsUrl, language, systemPrompt, setApiKey, setGtfsUrl, setLanguage, setSystemPrompt } = useSettingsStore();
   const apiKeyDescId = useId();
@@ -18,6 +28,7 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
   const [localLanguage, setLocalLanguage] = useState<Language>(language);
   const [localSystemPrompt, setLocalSystemPrompt] = useState(systemPrompt);
   const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     setLocalApiKey(apiKey);
@@ -57,6 +68,27 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
     const oldDefault = localLanguage === 'fr' ? DEFAULT_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT_EN;
     if (localSystemPrompt === oldDefault) {
       setLocalSystemPrompt(newLanguage === 'fr' ? DEFAULT_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT_EN);
+    }
+  };
+
+  const handleCopyUrlWithKey = async () => {
+    if (!localApiKey) return;
+
+    const urlWithKey = buildUrlWithApiKey(localApiKey);
+    try {
+      await navigator.clipboard.writeText(urlWithKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = urlWithKey;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -102,19 +134,42 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
         >
           Claude API Key
         </label>
-        <input
-          type="password"
-          id="apiKey"
-          value={localApiKey}
-          onChange={(e) => setLocalApiKey(e.target.value)}
-          placeholder="sk-ant-..."
-          aria-describedby={apiKeyDescId}
-          aria-required="true"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        />
+        <div className="flex gap-2">
+          <input
+            type="password"
+            id="apiKey"
+            value={localApiKey}
+            onChange={(e) => setLocalApiKey(e.target.value)}
+            placeholder="sk-ant-..."
+            aria-describedby={apiKeyDescId}
+            aria-required="true"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          <button
+            type="button"
+            onClick={handleCopyUrlWithKey}
+            disabled={!localApiKey}
+            className={`
+              px-3 py-2 text-sm rounded-lg border transition-colors
+              ${localApiKey
+                ? 'border-gray-300 text-gray-600 hover:bg-gray-50 hover:text-gray-800'
+                : 'border-gray-200 text-gray-400 cursor-not-allowed'
+              }
+            `}
+            title="Copy URL with API key to clipboard"
+            aria-label="Copy URL with API key to clipboard"
+          >
+            {copied ? '✓' : '📋'}
+          </button>
+        </div>
         <p id={apiKeyDescId} className="text-xs text-gray-500">
           Your API key is stored locally in your browser and never sent to any
           server except Anthropic's API.
+          {localApiKey && (
+            <span className="block mt-1">
+              Click 📋 to copy a shareable URL with your API key.
+            </span>
+          )}
         </p>
       </div>
 
