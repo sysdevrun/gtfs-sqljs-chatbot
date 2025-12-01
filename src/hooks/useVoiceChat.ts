@@ -25,11 +25,26 @@ export type VoiceChatState =
   | 'speaking'
   | 'error';
 
+export type WaitingFor = 'idle' | 'listening' | 'claude' | 'tool' | 'speaking';
+
+export interface ToolStatus {
+  lastToolUsed: string | null;
+  lastToolInput: Record<string, unknown> | null;
+  waitingFor: WaitingFor;
+}
+
 export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
   const [state, setState] = useState<VoiceChatState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [toolStatus, setToolStatus] = useState<ToolStatus>({
+    lastToolUsed: null,
+    lastToolInput: null,
+    waitingFor: 'idle',
+  });
 
   const apiKey = useSettingsStore((s) => s.apiKey);
+  const language = useSettingsStore((s) => s.language);
+  const systemPrompt = useSettingsStore((s) => s.systemPrompt);
   const { messages, addMessage, setProcessing, setLastResponse, reset } =
     useChatStore();
   const addLog = useDebugStore((s) => s.addLog);
@@ -37,10 +52,6 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
 
   const processWithClaude = useCallback(
     async (conversationMessages: MessageParam[]): Promise<string> => {
-      if (!gtfsApi) {
-        throw new Error('GTFS data not loaded');
-      }
-
       let currentMessages = [...conversationMessages];
       let finalResponse = '';
       let iterations = 0;
@@ -49,12 +60,14 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
       while (iterations < maxIterations) {
         iterations++;
 
+        setToolStatus(prev => ({ ...prev, waitingFor: 'claude' }));
+
         addLog('system', {
           message: `Sending to Claude (iteration ${iterations})`,
           messageCount: currentMessages.length,
         });
 
-        const response = await sendMessage(apiKey, currentMessages);
+        const response = await sendMessage(apiKey, currentMessages, systemPrompt);
 
         addLog('assistant_response', {
           content: response.content,
@@ -94,6 +107,12 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
         };
 
         for (const toolUse of toolUses) {
+          setToolStatus({
+            lastToolUsed: toolUse.name,
+            lastToolInput: toolUse.input as Record<string, unknown>,
+            waitingFor: 'tool',
+          });
+
           addLog('tool_call', {
             id: toolUse.id,
             name: toolUse.name,
@@ -101,7 +120,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
           });
 
           const result = await executeTool(
-            gtfsApi as unknown as GtfsWorkerApi,
+            gtfsApi as unknown as GtfsWorkerApi | null,
             toolUse.name,
             toolUse.input as Record<string, unknown>
           );
@@ -130,7 +149,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
 
       return finalResponse;
     },
-    [apiKey, gtfsApi, addLog, addMessage]
+    [apiKey, systemPrompt, gtfsApi, addLog, addMessage]
   );
 
   const startVoiceChat = useCallback(async () => {
@@ -154,11 +173,12 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
 
     setErrorMessage(null);
     setState('listening');
+    setToolStatus({ lastToolUsed: null, lastToolInput: null, waitingFor: 'listening' });
     stopSpeaking();
 
     try {
       // 1. Listen for speech
-      const transcript = await startSpeechRecognition();
+      const transcript = await startSpeechRecognition(language);
       addLog('user_input', { transcript });
 
       // 2. Add user message to conversation
@@ -171,6 +191,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
       // 3. Process with Claude
       setState('processing');
       setProcessing(true);
+      setToolStatus(prev => ({ ...prev, waitingFor: 'claude' }));
 
       const allMessages = [...messages, userMessage];
       const response = await processWithClaude(allMessages);
@@ -181,15 +202,18 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
       // 4. Speak the response
       if (response) {
         setState('speaking');
-        await speak(response);
+        setToolStatus(prev => ({ ...prev, waitingFor: 'speaking' }));
+        await speak(response, language);
       }
 
       setState('idle');
+      setToolStatus(prev => ({ ...prev, waitingFor: 'idle' }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setErrorMessage(message);
       setState('error');
       setProcessing(false);
+      setToolStatus(prev => ({ ...prev, waitingFor: 'idle' }));
       addLog('error', { message });
 
       // Auto-recover to idle after showing error
@@ -201,6 +225,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
     }
   }, [
     apiKey,
+    language,
     gtfsApi,
     messages,
     addMessage,
@@ -223,12 +248,14 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
     setLastResponse('');
     setState('idle');
     setErrorMessage(null);
+    setToolStatus({ lastToolUsed: null, lastToolInput: null, waitingFor: 'idle' });
     addLog('system', { message: 'Conversation reset' });
   }, [reset, clearLogs, setLastResponse, addLog]);
 
   return {
     state,
     errorMessage,
+    toolStatus,
     startVoiceChat,
     stopChat,
     resetConversation,
