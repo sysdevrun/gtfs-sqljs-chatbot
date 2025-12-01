@@ -34,6 +34,11 @@ export interface ToolStatus {
   intermediateText: string | null;
 }
 
+export interface TokenStats {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+}
+
 export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
   const [state, setState] = useState<VoiceChatState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -42,6 +47,10 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
     lastToolInput: null,
     waitingFor: 'idle',
     intermediateText: null,
+  });
+  const [tokenStats, setTokenStats] = useState<TokenStats>({
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
   });
 
   const apiKey = useSettingsStore((s) => s.apiKey);
@@ -71,9 +80,16 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
 
         const response = await sendMessage(apiKey, currentMessages, systemPrompt);
 
+        // Accumulate token usage
+        setTokenStats(prev => ({
+          totalInputTokens: prev.totalInputTokens + response.usage.inputTokens,
+          totalOutputTokens: prev.totalOutputTokens + response.usage.outputTokens,
+        }));
+
         addLog('assistant_response', {
           content: response.content,
           stopReason: response.stopReason,
+          usage: response.usage,
         });
 
         // Check for tool use
@@ -242,10 +258,101 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
     state,
   ]);
 
+  const processTextInput = useCallback(async (text: string) => {
+    if (!apiKey) {
+      setErrorMessage('Please set your Claude API key in Settings');
+      setState('error');
+      return;
+    }
+
+    if (!gtfsApi) {
+      setErrorMessage('GTFS data is not loaded yet');
+      setState('error');
+      return;
+    }
+
+    if (!text.trim()) {
+      return;
+    }
+
+    setErrorMessage(null);
+    setState('processing');
+    setToolStatus({ lastToolUsed: null, lastToolInput: null, waitingFor: 'claude', intermediateText: null });
+    stopSpeaking();
+
+    try {
+      addLog('user_input', { transcript: text, source: 'text' });
+
+      const userMessage: MessageParam = {
+        role: 'user',
+        content: text,
+      };
+      addMessage(userMessage);
+
+      setProcessing(true);
+
+      const allMessages = [...messages, userMessage];
+      const response = await processWithClaude(allMessages);
+
+      setLastResponse(response);
+      setProcessing(false);
+
+      if (response) {
+        setState('speaking');
+        setToolStatus(prev => ({ ...prev, waitingFor: 'speaking' }));
+        await speak(response, language);
+      }
+
+      setState('idle');
+      setToolStatus(prev => ({ ...prev, waitingFor: 'idle' }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setErrorMessage(message);
+      setState('error');
+      setProcessing(false);
+      setToolStatus(prev => ({ ...prev, waitingFor: 'idle' }));
+      addLog('error', { message });
+
+      setTimeout(() => {
+        if (state === 'error') {
+          setState('idle');
+        }
+      }, 3000);
+    }
+  }, [
+    apiKey,
+    language,
+    gtfsApi,
+    messages,
+    addMessage,
+    addLog,
+    setProcessing,
+    setLastResponse,
+    processWithClaude,
+    state,
+  ]);
+
+  const speakLastResponse = useCallback(async () => {
+    const { lastResponse } = useChatStore.getState();
+    if (!lastResponse) return;
+
+    stopSpeaking();
+    setState('speaking');
+    setToolStatus(prev => ({ ...prev, waitingFor: 'speaking' }));
+
+    try {
+      await speak(lastResponse, language);
+    } finally {
+      setState('idle');
+      setToolStatus(prev => ({ ...prev, waitingFor: 'idle' }));
+    }
+  }, [language]);
+
   const stopChat = useCallback(() => {
     stopSpeaking();
     setState('idle');
     setProcessing(false);
+    setToolStatus(prev => ({ ...prev, waitingFor: 'idle' }));
   }, [setProcessing]);
 
   const resetConversation = useCallback(() => {
@@ -255,6 +362,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
     setState('idle');
     setErrorMessage(null);
     setToolStatus({ lastToolUsed: null, lastToolInput: null, waitingFor: 'idle', intermediateText: null });
+    setTokenStats({ totalInputTokens: 0, totalOutputTokens: 0 });
     addLog('system', { message: 'Conversation reset' });
   }, [reset, clearLogs, setLastResponse, addLog]);
 
@@ -262,7 +370,10 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
     state,
     errorMessage,
     toolStatus,
+    tokenStats,
     startVoiceChat,
+    processTextInput,
+    speakLastResponse,
     stopChat,
     resetConversation,
   };
