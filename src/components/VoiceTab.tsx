@@ -202,12 +202,18 @@ export function VoiceTab({
       </div>
 
       {/* Tool Status Indicator */}
-      {(toolStatus.waitingFor !== 'idle' || toolStatus.lastToolUsed) && (
+      {(toolStatus.waitingFor !== 'idle' || toolStatus.lastToolUsed || toolStatus.intermediateText) && (
         <div
-          className="bg-gray-100 border border-gray-200 rounded-lg p-3 max-w-md w-full text-center"
+          className="bg-gray-100 border border-gray-200 rounded-lg p-3 max-w-md w-full"
           role="status"
           aria-live="polite"
         >
+          {/* Intermediate text from Claude */}
+          {toolStatus.intermediateText && (
+            <div className="text-sm text-gray-700 mb-2 italic">
+              {toolStatus.intermediateText}
+            </div>
+          )}
           {toolStatus.waitingFor !== 'idle' && (
             <div className="flex items-center justify-center space-x-2 text-gray-700">
               <div
@@ -220,7 +226,7 @@ export function VoiceTab({
             </div>
           )}
           {toolStatus.lastToolUsed && (
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-gray-500 text-center">
               <span className="font-medium">Dernier outil:</span>{' '}
               <span className="font-mono bg-gray-200 px-1 rounded">
                 {toolStatus.lastToolUsed}
