@@ -129,6 +129,41 @@ export const GTFS_TOOLS: Tool[] = [
       },
     },
   },
+  {
+    name: 'findItinerary',
+    description:
+      'Find transit itineraries between two stops. Returns scheduled journeys with transfers, departure/arrival times, and route information. Use this when a user wants to travel from one location to another. First search for stops to get stop IDs, then use this tool to find possible itineraries.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        startStopId: {
+          type: 'string',
+          description: 'The starting stop ID. Use searchStopsByWords or getStops first to find the stop ID.',
+        },
+        endStopId: {
+          type: 'string',
+          description: 'The destination stop ID. Use searchStopsByWords or getStops first to find the stop ID.',
+        },
+        date: {
+          type: 'string',
+          description: 'REQUIRED: Date in YYYYMMDD format. Get this from getCurrentDateTime first.',
+        },
+        departureTime: {
+          type: 'string',
+          description: 'Departure time in HH:MM:SS format (e.g., "08:30:00"). Get current time from getCurrentDateTime if user wants to leave now.',
+        },
+        maxTransfers: {
+          type: 'number',
+          description: 'Maximum number of transfers allowed (default: 3)',
+        },
+        journeysCount: {
+          type: 'number',
+          description: 'Number of journey options to return (default: 3)',
+        },
+      },
+      required: ['startStopId', 'endStopId', 'date', 'departureTime'],
+    },
+  },
 ];
 
 export interface ClaudeResponse {
