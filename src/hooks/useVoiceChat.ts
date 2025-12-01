@@ -31,6 +31,7 @@ export interface ToolStatus {
   lastToolUsed: string | null;
   lastToolInput: Record<string, unknown> | null;
   waitingFor: WaitingFor;
+  intermediateText: string | null;
 }
 
 export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
@@ -40,6 +41,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
     lastToolUsed: null,
     lastToolInput: null,
     waitingFor: 'idle',
+    intermediateText: null,
   });
 
   const apiKey = useSettingsStore((s) => s.apiKey);
@@ -90,6 +92,9 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
           break;
         }
 
+        // Extract any intermediate text explanation from Claude
+        const intermediateText = extractTextFromContent(response.content);
+
         // Add assistant message with tool use to conversation
         addMessage({
           role: 'assistant',
@@ -111,6 +116,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
             lastToolUsed: toolUse.name,
             lastToolInput: toolUse.input as Record<string, unknown>,
             waitingFor: 'tool',
+            intermediateText: intermediateText || null,
           });
 
           addLog('tool_call', {
@@ -173,7 +179,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
 
     setErrorMessage(null);
     setState('listening');
-    setToolStatus({ lastToolUsed: null, lastToolInput: null, waitingFor: 'listening' });
+    setToolStatus({ lastToolUsed: null, lastToolInput: null, waitingFor: 'listening', intermediateText: null });
     stopSpeaking();
 
     try {
@@ -248,7 +254,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
     setLastResponse('');
     setState('idle');
     setErrorMessage(null);
-    setToolStatus({ lastToolUsed: null, lastToolInput: null, waitingFor: 'idle' });
+    setToolStatus({ lastToolUsed: null, lastToolInput: null, waitingFor: 'idle', intermediateText: null });
     addLog('system', { message: 'Conversation reset' });
   }, [reset, clearLogs, setLastResponse, addLog]);
 
