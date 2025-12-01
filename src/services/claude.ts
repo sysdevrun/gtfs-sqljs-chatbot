@@ -1,6 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam, Tool } from '@anthropic-ai/sdk/resources/messages';
 
+// Helper for defining parameters that accept string or array of strings
+const stringOrArraySchema = (description: string) => ({
+  oneOf: [
+    { type: 'string' as const },
+    { type: 'array' as const, items: { type: 'string' as const } },
+  ],
+  description,
+});
+
 export const GTFS_TOOLS: Tool[] = [
   {
     name: 'getCurrentDateTime',
@@ -14,18 +23,12 @@ export const GTFS_TOOLS: Tool[] = [
   {
     name: 'getRoutes',
     description:
-      'Search for transit routes/lines. Returns route short name (the main identifier to use when referring to routes), long name, type, and colors. NEVER refer to routes by their internal ID - always use route_short_name.',
+      'Search for transit routes/lines. Returns route short name (the main identifier to use when referring to routes), long name, type, and colors. NEVER refer to routes by their internal ID - always use route_short_name. Can query multiple routes at once by passing an array of IDs.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        routeId: {
-          type: 'string',
-          description: 'Exact route ID to look up (internal use only)',
-        },
-        agencyId: {
-          type: 'string',
-          description: 'Filter routes by agency ID',
-        },
+        routeId: stringOrArraySchema('Route ID(s) to look up - single string or array of strings'),
+        agencyId: stringOrArraySchema('Filter routes by agency ID(s) - single string or array of strings'),
         limit: {
           type: 'number',
           description: 'Maximum number of results to return (default: 10)',
@@ -36,14 +39,11 @@ export const GTFS_TOOLS: Tool[] = [
   {
     name: 'getStops',
     description:
-      'Search for transit stops/stations. You can search by stop ID, stop code, name (partial match), or get stops for a specific trip. Note: stops often have parent stops that have no stop times - always check child stops too.',
+      'Search for transit stops/stations. You can search by stop ID (single or multiple), stop code, name (partial match), or get stops for a specific trip. Note: stops often have parent stops that have no stop times - always check child stops too. Use arrays to query multiple stops at once.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        stopId: {
-          type: 'string',
-          description: 'Exact stop ID to look up',
-        },
+        stopId: stringOrArraySchema('Stop ID(s) to look up - single string or array of strings for batch lookup'),
         stopCode: {
           type: 'string',
           description: 'Stop code (rider-facing identifier)',
@@ -85,22 +85,13 @@ export const GTFS_TOOLS: Tool[] = [
   {
     name: 'getTrips',
     description:
-      'Search for trips (scheduled journeys on a route). Returns trip_headsign (the main identifier to use when referring to trips) and schedule information. ALWAYS pass the date parameter to filter active trips. Use trip_headsign to describe trips to users, never the trip ID.',
+      'Search for trips (scheduled journeys on a route). Returns trip_headsign (the main identifier to use when referring to trips) and schedule information. ALWAYS pass the date parameter to filter active trips. Use trip_headsign to describe trips to users, never the trip ID. Can query multiple trips/routes at once using arrays.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        tripId: {
-          type: 'string',
-          description: 'Exact trip ID to look up',
-        },
-        routeId: {
-          type: 'string',
-          description: 'Filter trips by route ID',
-        },
-        serviceIds: {
-          type: 'string',
-          description: 'Filter by service ID (or comma-separated list)',
-        },
+        tripId: stringOrArraySchema('Trip ID(s) to look up - single string or array of strings'),
+        routeId: stringOrArraySchema('Filter trips by route ID(s) - single string or array of strings to query multiple routes'),
+        serviceIds: stringOrArraySchema('Filter by service ID(s) - single string or array of strings'),
         directionId: {
           type: 'number',
           description: 'Direction of travel (0 or 1)',
@@ -119,26 +110,14 @@ export const GTFS_TOOLS: Tool[] = [
   {
     name: 'getStopTimes',
     description:
-      'Get scheduled arrival/departure times at stops. ALWAYS pass the date parameter to filter schedules. If no results for a stop, try searching for child stops with the same name.',
+      'Get scheduled arrival/departure times at stops. ALWAYS pass the date parameter to filter schedules. Can query multiple stops or trips at once using arrays. If no results for a stop, try searching for child stops with the same name.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        tripId: {
-          type: 'string',
-          description: 'Filter by trip ID to get all stops for a trip',
-        },
-        stopId: {
-          type: 'string',
-          description: 'Filter by stop ID to get all arrivals at a stop',
-        },
-        routeId: {
-          type: 'string',
-          description: 'Filter by route ID',
-        },
-        serviceIds: {
-          type: 'string',
-          description: 'Filter by service ID (or comma-separated list)',
-        },
+        tripId: stringOrArraySchema('Filter by trip ID(s) - single string or array of strings to get schedules for multiple trips'),
+        stopId: stringOrArraySchema('Filter by stop ID(s) - single string or array of strings to get arrivals at multiple stops'),
+        routeId: stringOrArraySchema('Filter by route ID(s) - single string or array of strings'),
+        serviceIds: stringOrArraySchema('Filter by service ID(s) - single string or array of strings'),
         date: {
           type: 'string',
           description: 'REQUIRED: Filter by date in YYYYMMDD format. Get this from getCurrentDateTime first.',

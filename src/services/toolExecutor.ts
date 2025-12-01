@@ -8,6 +8,17 @@ export interface ToolInput {
 }
 
 /**
+ * Convert input to string or string array, preserving arrays
+ */
+function toStringOrArray(value: unknown): string | string[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (Array.isArray(value)) {
+    return value.map(v => String(v));
+  }
+  return String(value);
+}
+
+/**
  * Get the current date and time in various formats useful for GTFS queries
  */
 function getCurrentDateTime(): {
@@ -71,7 +82,8 @@ export async function executeTool(
     switch (toolName) {
       case 'getStops': {
         const filters: StopFilters = {};
-        if (input.stopId) filters.stopId = String(input.stopId);
+        const stopId = toStringOrArray(input.stopId);
+        if (stopId) filters.stopId = stopId;
         if (input.stopCode) filters.stopCode = String(input.stopCode);
         if (input.name) filters.name = String(input.name);
         if (input.tripId) filters.tripId = String(input.tripId);
@@ -82,8 +94,10 @@ export async function executeTool(
 
       case 'getRoutes': {
         const filters: RouteFilters = {};
-        if (input.routeId) filters.routeId = String(input.routeId);
-        if (input.agencyId) filters.agencyId = String(input.agencyId);
+        const routeId = toStringOrArray(input.routeId);
+        const agencyId = toStringOrArray(input.agencyId);
+        if (routeId) filters.routeId = routeId;
+        if (agencyId) filters.agencyId = agencyId;
         if (input.limit) filters.limit = Number(input.limit);
         result = await gtfsApi.getRoutes(filters);
         break;
@@ -91,15 +105,15 @@ export async function executeTool(
 
       case 'getTrips': {
         const filters: TripFilters = {};
-        if (input.tripId) filters.tripId = String(input.tripId);
-        if (input.routeId) filters.routeId = String(input.routeId);
-        if (input.serviceIds) {
-          const ids = String(input.serviceIds);
-          filters.serviceIds = ids.includes(',') ? ids.split(',').map((s) => s.trim()) : ids;
-        }
+        const tripId = toStringOrArray(input.tripId);
+        const routeId = toStringOrArray(input.routeId);
+        const serviceIds = toStringOrArray(input.serviceIds);
+        if (tripId) filters.tripId = tripId;
+        if (routeId) filters.routeId = routeId;
+        if (serviceIds) filters.serviceIds = serviceIds;
         if (input.directionId !== undefined) filters.directionId = Number(input.directionId);
-        // If date is provided, get active service IDs for that date
-        if (input.date && !input.serviceIds) {
+        // If date is provided and no serviceIds, get active service IDs for that date
+        if (input.date && !serviceIds) {
           const activeServiceIds = await gtfsApi.getActiveServiceIds(String(input.date));
           if (activeServiceIds.length > 0) {
             filters.serviceIds = activeServiceIds;
@@ -112,15 +126,16 @@ export async function executeTool(
 
       case 'getStopTimes': {
         const filters: StopTimeFilters = {};
-        if (input.tripId) filters.tripId = String(input.tripId);
-        if (input.stopId) filters.stopId = String(input.stopId);
-        if (input.routeId) filters.routeId = String(input.routeId);
-        if (input.serviceIds) {
-          const ids = String(input.serviceIds);
-          filters.serviceIds = ids.includes(',') ? ids.split(',').map((s) => s.trim()) : ids;
-        }
-        // If date is provided, get active service IDs for that date
-        if (input.date && !input.serviceIds) {
+        const tripId = toStringOrArray(input.tripId);
+        const stopId = toStringOrArray(input.stopId);
+        const routeId = toStringOrArray(input.routeId);
+        const serviceIds = toStringOrArray(input.serviceIds);
+        if (tripId) filters.tripId = tripId;
+        if (stopId) filters.stopId = stopId;
+        if (routeId) filters.routeId = routeId;
+        if (serviceIds) filters.serviceIds = serviceIds;
+        // If date is provided and no serviceIds, get active service IDs for that date
+        if (input.date && !serviceIds) {
           const activeServiceIds = await gtfsApi.getActiveServiceIds(String(input.date));
           if (activeServiceIds.length > 0) {
             filters.serviceIds = activeServiceIds;
