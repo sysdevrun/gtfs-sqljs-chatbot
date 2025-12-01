@@ -15,6 +15,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
     "comlink": "^4.4.2",
+    "framer-motion": "^12.23.25",
     "gtfs-sqljs": "github:sysdevrun/gtfs-sqljs",
     "gtfs-sqljs-itinerary": "github:sysdevrun/gtfs-sqljs-itinerary",
     "react": "^19.2.0",

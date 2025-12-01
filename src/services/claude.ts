@@ -166,9 +166,15 @@ export const GTFS_TOOLS: Tool[] = [
   },
 ];
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface ClaudeResponse {
   content: Anthropic.ContentBlock[];
   stopReason: string | null;
+  usage: TokenUsage;
 }
 
 export async function sendMessage(
@@ -192,6 +198,10 @@ export async function sendMessage(
   return {
     content: response.content,
     stopReason: response.stop_reason,
+    usage: {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+    },
   };
 }
 

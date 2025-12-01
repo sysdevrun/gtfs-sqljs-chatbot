@@ -1,3 +1,5 @@
+import { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useChatStore } from '../stores/chatStore';
 import { useVoiceChat, type VoiceChatState, type WaitingFor } from '../hooks/useVoiceChat';
 import { isSpeechRecognitionSupported } from '../services/speech';
@@ -75,18 +77,67 @@ function getButtonAriaLabel(state: VoiceChatState, isDisabled: boolean): string 
   }
 }
 
+function formatTokenCount(count: number): string {
+  if (count >= 1000) {
+    return `${(count / 1000).toFixed(1)}k`;
+  }
+  return count.toString();
+}
+
+// Rolling text animation component
+function RollingText({ text, className }: { text: string; className?: string }) {
+  const [displayText, setDisplayText] = useState(text);
+  const [key, setKey] = useState(0);
+
+  useEffect(() => {
+    if (text !== displayText) {
+      setKey(prev => prev + 1);
+      setDisplayText(text);
+    }
+  }, [text, displayText]);
+
+  return (
+    <div className={`overflow-hidden ${className || ''}`}>
+      <AnimatePresence mode="popLayout">
+        <motion.div
+          key={key}
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -20, opacity: 0 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+        >
+          {displayText}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export function VoiceTab({
   gtfsApi,
   gtfsLoadingState,
   gtfsProgress,
   gtfsError,
 }: VoiceTabProps) {
-  const { lastResponse, isProcessing } = useChatStore();
-  const { state, errorMessage, toolStatus, startVoiceChat, stopChat, resetConversation } =
-    useVoiceChat(gtfsApi);
+  const { lastResponse } = useChatStore();
+  const {
+    state,
+    errorMessage,
+    toolStatus,
+    tokenStats,
+    startVoiceChat,
+    processTextInput,
+    speakLastResponse,
+    stopChat,
+    resetConversation
+  } = useVoiceChat(gtfsApi);
+
+  const [textInput, setTextInput] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const isGtfsReady = gtfsLoadingState === 'ready';
   const isSpeechSupported = isSpeechRecognitionSupported();
+  const isProcessing = state === 'processing' || state === 'listening';
 
   const handleMainButton = () => {
     if (state === 'speaking') {
@@ -96,11 +147,41 @@ export function VoiceTab({
     }
   };
 
+  const handleTextSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (textInput.trim() && isGtfsReady && state === 'idle') {
+      processTextInput(textInput);
+      setTextInput('');
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleTextSubmit(e);
+    }
+  };
+
   const isButtonDisabled =
     !isGtfsReady ||
     !isSpeechSupported ||
     state === 'listening' ||
     state === 'processing';
+
+  const isTextInputDisabled = !isGtfsReady || state !== 'idle';
+
+  // Build current status text
+  const getStatusText = (): string => {
+    if (toolStatus.lastToolUsed && toolStatus.waitingFor === 'tool') {
+      return `${toolStatus.lastToolUsed}...`;
+    }
+    if (toolStatus.waitingFor !== 'idle') {
+      return getWaitingForLabel(toolStatus.waitingFor);
+    }
+    return '';
+  };
+
+  const statusText = getStatusText();
 
   return (
     <div
@@ -157,7 +238,7 @@ export function VoiceTab({
         >
           <p className="text-yellow-800 text-sm">
             Speech recognition is not supported in this browser. Please use
-            Chrome or Edge for voice input.
+            Chrome or Edge for voice input, or use the text input below.
           </p>
         </div>
       )}
@@ -172,69 +253,121 @@ export function VoiceTab({
         {getStateLabel(state)}
       </div>
 
-      {/* Main Speak Button */}
-      <button
-        onClick={handleMainButton}
-        disabled={isButtonDisabled}
-        aria-label={getButtonAriaLabel(state, isButtonDisabled)}
-        aria-pressed={state === 'listening'}
-        className={`
-          w-32 h-32 rounded-full text-white font-medium text-lg
-          transition-all duration-200 transform
-          ${isButtonDisabled ? 'bg-gray-400 cursor-not-allowed' : ''}
-          ${state === 'idle' ? 'bg-blue-600 hover:bg-blue-700 hover:scale-105' : ''}
-          ${state === 'listening' ? 'bg-red-500 animate-pulse' : ''}
-          ${state === 'processing' ? 'bg-yellow-500' : ''}
-          ${state === 'speaking' ? 'bg-green-600 hover:bg-green-700' : ''}
-          ${state === 'error' ? 'bg-red-600 hover:bg-red-700' : ''}
-          focus:outline-none focus:ring-4 focus:ring-blue-300
-        `}
-      >
-        {getButtonLabel(state)}
-      </button>
+      {/* Main Speak Button with Pulse Animation */}
+      <div className="relative">
+        {/* Pulsing circle behind (only when processing) */}
+        {isProcessing && (
+          <motion.div
+            className="absolute inset-0 rounded-full bg-blue-400"
+            initial={{ scale: 1, opacity: 0.5 }}
+            animate={{
+              scale: [1, 1.3, 1],
+              opacity: [0.5, 0, 0.5]
+            }}
+            transition={{
+              duration: 1.5,
+              repeat: Infinity,
+              ease: 'easeInOut'
+            }}
+          />
+        )}
 
-      {/* Visual State Indicator (hidden from screen readers, redundant) */}
-      <div className="text-gray-600 text-sm" aria-hidden="true">
-        {state === 'idle' ? 'Ready' :
-         state === 'listening' ? 'Listening...' :
-         state === 'processing' ? 'Processing...' :
-         state === 'speaking' ? 'Speaking...' : 'Error'}
+        {/* Main button */}
+        <button
+          onClick={handleMainButton}
+          disabled={isButtonDisabled}
+          aria-label={getButtonAriaLabel(state, isButtonDisabled)}
+          aria-pressed={state === 'listening'}
+          className={`
+            relative z-10 w-32 h-32 rounded-full text-white font-medium text-lg
+            transition-all duration-200 transform
+            ${isButtonDisabled ? 'bg-gray-400 cursor-not-allowed' : ''}
+            ${state === 'idle' ? 'bg-blue-600 hover:bg-blue-700 hover:scale-105' : ''}
+            ${state === 'listening' ? 'bg-red-500' : ''}
+            ${state === 'processing' ? 'bg-yellow-500' : ''}
+            ${state === 'speaking' ? 'bg-green-600 hover:bg-green-700' : ''}
+            ${state === 'error' ? 'bg-red-600 hover:bg-red-700' : ''}
+            focus:outline-none focus:ring-4 focus:ring-blue-300
+          `}
+        >
+          {getButtonLabel(state)}
+        </button>
       </div>
 
-      {/* Tool Status Indicator */}
-      {(toolStatus.waitingFor !== 'idle' || toolStatus.lastToolUsed || toolStatus.intermediateText) && (
-        <div
-          className="bg-gray-100 border border-gray-200 rounded-lg p-3 max-w-md w-full"
-          role="status"
-          aria-live="polite"
-        >
-          {/* Intermediate text from Claude */}
-          {toolStatus.intermediateText && (
-            <div className="text-sm text-gray-700 mb-2 italic">
-              {toolStatus.intermediateText}
-            </div>
-          )}
-          {toolStatus.waitingFor !== 'idle' && (
-            <div className="flex items-center justify-center space-x-2 text-gray-700">
-              <div
-                className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"
-                aria-hidden="true"
-              />
-              <span className="text-sm font-medium">
-                {getWaitingForLabel(toolStatus.waitingFor)}
-              </span>
-            </div>
-          )}
-          {toolStatus.lastToolUsed && (
-            <div className="mt-2 text-xs text-gray-500 text-center">
-              <span className="font-medium">Dernier outil:</span>{' '}
-              <span className="font-mono bg-gray-200 px-1 rounded">
-                {toolStatus.lastToolUsed}
-              </span>
-            </div>
-          )}
+      {/* Status Text with Rolling Animation */}
+      <div className="h-6 flex items-center justify-center">
+        {statusText && (
+          <RollingText
+            text={statusText}
+            className="text-gray-600 text-sm font-medium"
+          />
+        )}
+      </div>
+
+      {/* Intermediate text from Claude */}
+      <AnimatePresence>
+        {toolStatus.intermediateText && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="text-sm text-gray-600 italic text-center max-w-md"
+          >
+            {toolStatus.intermediateText}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Tool Status Badge */}
+      <AnimatePresence>
+        {toolStatus.lastToolUsed && toolStatus.waitingFor !== 'idle' && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="text-xs text-gray-500"
+          >
+            <span className="font-mono bg-gray-100 px-2 py-1 rounded">
+              {toolStatus.lastToolUsed}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Text Input Form */}
+      <form onSubmit={handleTextSubmit} className="w-full max-w-md">
+        <div className="flex gap-2">
+          <input
+            ref={inputRef}
+            type="text"
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isTextInputDisabled}
+            placeholder={isGtfsReady ? "Tapez votre question..." : "Chargement des donnees..."}
+            className={`
+              flex-1 px-4 py-2 border border-gray-300 rounded-lg
+              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+              ${isTextInputDisabled ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}
+            `}
+            aria-label="Text input for questions"
+          />
+          <button
+            type="submit"
+            disabled={isTextInputDisabled || !textInput.trim()}
+            className={`
+              px-4 py-2 rounded-lg font-medium transition-colors
+              ${isTextInputDisabled || !textInput.trim()
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+              }
+            `}
+            aria-label="Send message"
+          >
+            Envoyer
+          </button>
         </div>
-      )}
+      </form>
 
       {/* Error Message */}
       {errorMessage && (
@@ -255,34 +388,50 @@ export function VoiceTab({
           aria-label="Assistant response"
           aria-live="polite"
         >
-          <h3 className="sr-only">Latest response from assistant:</h3>
+          <div className="flex justify-between items-start mb-2">
+            <h3 className="sr-only">Latest response from assistant:</h3>
+            <button
+              onClick={speakLastResponse}
+              disabled={state !== 'idle'}
+              className={`
+                text-xs px-2 py-1 rounded transition-colors
+                ${state !== 'idle'
+                  ? 'text-gray-400 cursor-not-allowed'
+                  : 'text-blue-600 hover:bg-blue-50'
+                }
+              `}
+              aria-label="Read response again"
+            >
+              🔊 Relire
+            </button>
+          </div>
           <p className="text-gray-800 whitespace-pre-wrap">{lastResponse}</p>
         </div>
       )}
 
-      {/* Processing Indicator */}
-      {isProcessing && (
-        <div
-          className="flex items-center space-x-2 text-gray-600"
-          role="status"
-          aria-live="polite"
+      {/* Bottom Controls */}
+      <div className="flex items-center gap-4">
+        {/* Reset Button */}
+        <button
+          onClick={resetConversation}
+          className="text-sm text-gray-500 hover:text-gray-700 underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+          aria-label="Reset conversation and clear all messages"
         >
-          <div
-            className="animate-spin rounded-full h-4 w-4 border-2 border-gray-600 border-t-transparent"
-            aria-hidden="true"
-          />
-          <span className="text-sm">Processing your request...</span>
-        </div>
-      )}
+          Reset Conversation
+        </button>
 
-      {/* Reset Button */}
-      <button
-        onClick={resetConversation}
-        className="text-sm text-gray-500 hover:text-gray-700 underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
-        aria-label="Reset conversation and clear all messages"
-      >
-        Reset Conversation
-      </button>
+        {/* Token Usage (discreet) */}
+        {(tokenStats.totalInputTokens > 0 || tokenStats.totalOutputTokens > 0) && (
+          <div
+            className="text-xs text-gray-400"
+            title={`Input: ${tokenStats.totalInputTokens} tokens, Output: ${tokenStats.totalOutputTokens} tokens`}
+          >
+            <span className="opacity-60">
+              ↑{formatTokenCount(tokenStats.totalInputTokens)} ↓{formatTokenCount(tokenStats.totalOutputTokens)}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
