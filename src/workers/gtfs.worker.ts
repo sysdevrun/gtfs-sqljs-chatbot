@@ -12,6 +12,8 @@ import type {
   TripFilters,
   StopTimeFilters,
 } from 'gtfs-sqljs';
+import { GraphBuilder } from 'gtfs-sqljs-itinerary';
+import type { ScheduledJourney, PathSegment } from 'gtfs-sqljs-itinerary';
 
 // Progress Info type (defined locally as gtfs-sqljs doesn't export it)
 interface ProgressInfo {
@@ -244,6 +246,80 @@ const gtfsApi = {
       .slice(0, limit);
 
     return results;
+  },
+
+  /**
+   * Find itineraries between two stops.
+   * Uses graph-based path finding and matches with scheduled trips.
+   * @param startStopId - The starting stop ID
+   * @param endStopId - The destination stop ID
+   * @param date - Date in YYYYMMDD format
+   * @param departureTime - Departure time in HH:MM:SS format
+   * @param options - Optional parameters
+   * @returns Array of scheduled journeys
+   */
+  findItinerary(
+    startStopId: string,
+    endStopId: string,
+    date: string,
+    departureTime: string,
+    options?: {
+      maxPaths?: number;
+      maxTransfers?: number;
+      minTransferDuration?: number;
+      journeysCount?: number;
+    }
+  ): { journeys: ScheduledJourney[]; paths: PathSegment[][] } {
+    if (!gtfsInstance) {
+      throw new Error('GTFS not initialized');
+    }
+
+    const maxPaths = options?.maxPaths ?? 10;
+    const maxTransfers = options?.maxTransfers ?? 3;
+    const minTransferDuration = options?.minTransferDuration ?? 300; // 5 minutes default
+    const journeysCount = options?.journeysCount ?? 3;
+
+    // Create graph builder and build graph for the date
+    const graphBuilder = new GraphBuilder(gtfsInstance);
+    graphBuilder.buildGraph(date);
+
+    // Find all possible paths
+    const paths = graphBuilder.findAllPaths(startStopId, endStopId, maxPaths, maxTransfers);
+
+    if (paths.length === 0) {
+      return { journeys: [], paths: [] };
+    }
+
+    // Convert departure time to seconds since midnight
+    const timeParts = departureTime.split(':').map(Number);
+    const departureSeconds = timeParts[0] * 3600 + timeParts[1] * 60 + (timeParts[2] || 0);
+
+    // Find scheduled trips for each path and collect all journeys
+    const allJourneys: ScheduledJourney[] = [];
+    const usedPaths: PathSegment[][] = [];
+
+    for (const path of paths) {
+      const journeys = GraphBuilder.findScheduledTrips(
+        gtfsInstance,
+        path,
+        date,
+        departureSeconds,
+        minTransferDuration,
+        journeysCount
+      );
+      if (journeys.length > 0) {
+        allJourneys.push(...journeys);
+        usedPaths.push(path);
+      }
+    }
+
+    // Sort by departure time and limit results
+    allJourneys.sort((a, b) => a.departureTime - b.departureTime);
+
+    return {
+      journeys: allJourneys.slice(0, journeysCount),
+      paths: usedPaths,
+    };
   },
 
   close(): void {

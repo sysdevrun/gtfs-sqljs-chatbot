@@ -16,6 +16,7 @@
     "@anthropic-ai/sdk": "^0.71.0",
     "comlink": "^4.4.2",
     "gtfs-sqljs": "github:sysdevrun/gtfs-sqljs",
+    "gtfs-sqljs-itinerary": "github:sysdevrun/gtfs-sqljs-itinerary",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "sql.js": "^1.13.0",
