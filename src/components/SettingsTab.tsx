@@ -1,29 +1,38 @@
 import { useState, useEffect, useId } from 'react';
-import { useSettingsStore } from '../stores/settingsStore';
+import { useSettingsStore, LANGUAGE_LABELS, DEFAULT_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT_EN } from '../stores/settingsStore';
+import type { Language } from '../stores/settingsStore';
 
 interface SettingsTabProps {
   onGtfsUrlChange: () => void;
 }
 
 export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
-  const { apiKey, gtfsUrl, setApiKey, setGtfsUrl } = useSettingsStore();
+  const { apiKey, gtfsUrl, language, systemPrompt, setApiKey, setGtfsUrl, setLanguage, setSystemPrompt } = useSettingsStore();
   const apiKeyDescId = useId();
   const gtfsUrlDescId = useId();
+  const languageDescId = useId();
+  const systemPromptDescId = useId();
 
   const [localApiKey, setLocalApiKey] = useState(apiKey);
   const [localGtfsUrl, setLocalGtfsUrl] = useState(gtfsUrl);
+  const [localLanguage, setLocalLanguage] = useState<Language>(language);
+  const [localSystemPrompt, setLocalSystemPrompt] = useState(systemPrompt);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     setLocalApiKey(apiKey);
     setLocalGtfsUrl(gtfsUrl);
-  }, [apiKey, gtfsUrl]);
+    setLocalLanguage(language);
+    setLocalSystemPrompt(systemPrompt);
+  }, [apiKey, gtfsUrl, language, systemPrompt]);
 
   const handleSave = () => {
     const urlChanged = localGtfsUrl !== gtfsUrl;
 
     setApiKey(localApiKey);
     setGtfsUrl(localGtfsUrl);
+    setLanguage(localLanguage);
+    setSystemPrompt(localSystemPrompt);
 
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -38,6 +47,19 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
     setLocalGtfsUrl(defaultUrl);
   };
 
+  const handleResetSystemPrompt = () => {
+    setLocalSystemPrompt(localLanguage === 'fr' ? DEFAULT_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT_EN);
+  };
+
+  const handleLanguageChange = (newLanguage: Language) => {
+    setLocalLanguage(newLanguage);
+    // Offer to update system prompt if it's the default for the old language
+    const oldDefault = localLanguage === 'fr' ? DEFAULT_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT_EN;
+    if (localSystemPrompt === oldDefault) {
+      setLocalSystemPrompt(newLanguage === 'fr' ? DEFAULT_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT_EN);
+    }
+  };
+
   return (
     <div
       className="max-w-lg mx-auto p-6 space-y-6"
@@ -45,6 +67,32 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
       aria-label="Application settings"
     >
       <h2 className="text-xl font-semibold text-gray-800">Settings</h2>
+
+      {/* Language */}
+      <div className="space-y-2">
+        <label
+          htmlFor="language"
+          className="block text-sm font-medium text-gray-700"
+        >
+          Langue / Language
+        </label>
+        <select
+          id="language"
+          value={localLanguage}
+          onChange={(e) => handleLanguageChange(e.target.value as Language)}
+          aria-describedby={languageDescId}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+        >
+          {(Object.keys(LANGUAGE_LABELS) as Language[]).map((lang) => (
+            <option key={lang} value={lang}>
+              {LANGUAGE_LABELS[lang]}
+            </option>
+          ))}
+        </select>
+        <p id={languageDescId} className="text-xs text-gray-500">
+          Langue pour la reconnaissance vocale et la synthese vocale. / Language for voice recognition and synthesis.
+        </p>
+      </div>
 
       {/* API Key */}
       <div className="space-y-2">
@@ -96,6 +144,37 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
             type="button"
             className="text-xs text-blue-600 hover:text-blue-800 underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
             aria-label="Reset GTFS URL to default Car Jaune feed"
+          >
+            Reset to default
+          </button>
+        </div>
+      </div>
+
+      {/* System Prompt */}
+      <div className="space-y-2">
+        <label
+          htmlFor="systemPrompt"
+          className="block text-sm font-medium text-gray-700"
+        >
+          System Prompt (Instructions for AI)
+        </label>
+        <textarea
+          id="systemPrompt"
+          value={localSystemPrompt}
+          onChange={(e) => setLocalSystemPrompt(e.target.value)}
+          rows={10}
+          aria-describedby={systemPromptDescId}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+        />
+        <div className="flex items-center justify-between" id={systemPromptDescId}>
+          <p className="text-xs text-gray-500">
+            Instructions given to Claude for how to respond to queries.
+          </p>
+          <button
+            onClick={handleResetSystemPrompt}
+            type="button"
+            className="text-xs text-blue-600 hover:text-blue-800 underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+            aria-label="Reset system prompt to default"
           >
             Reset to default
           </button>

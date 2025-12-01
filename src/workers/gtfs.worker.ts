@@ -63,6 +63,11 @@ async function getSql(): Promise<SqlJsStatic> {
   return sqlInstance;
 }
 
+interface StopWithScore extends Stop {
+  matchScore: number;
+  matchedWords: string[];
+}
+
 const gtfsApi = {
   async initialize(
     url: string,
@@ -116,6 +121,129 @@ const gtfsApi = {
       throw new Error('GTFS not initialized');
     }
     return gtfsInstance.getStopTimes({ ...filters, limit: filters?.limit ?? 20 });
+  },
+
+  /**
+   * Get active service IDs for a specific date.
+   * Uses GTFS calendar and calendar_dates to determine which services are active.
+   */
+  getActiveServiceIds(date: string): string[] {
+    if (!gtfsInstance) {
+      throw new Error('GTFS not initialized');
+    }
+
+    // Get exceptions for this date (added or removed services)
+    const calendarDates = gtfsInstance.getCalendarDatesForDate(date);
+    const addedServices = new Set<string>();
+    const removedServices = new Set<string>();
+
+    for (const cd of calendarDates) {
+      if (cd.exception_type === 1) {
+        addedServices.add(cd.service_id);
+      } else if (cd.exception_type === 2) {
+        removedServices.add(cd.service_id);
+      }
+    }
+
+    // Parse the date to get day of week
+    const year = parseInt(date.substring(0, 4), 10);
+    const month = parseInt(date.substring(4, 6), 10) - 1;
+    const day = parseInt(date.substring(6, 8), 10);
+    const dateObj = new Date(year, month, day);
+    const dayOfWeek = dateObj.getDay(); // 0=Sunday, 1=Monday, etc.
+
+    const dayNames: ('sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday')[] =
+      ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const dayName = dayNames[dayOfWeek];
+
+    // Get all trips to find unique service IDs, then check each calendar
+    const trips = gtfsInstance.getTrips({ limit: 10000 });
+    const uniqueServiceIds = new Set(trips.map(t => t.service_id).filter(Boolean));
+
+    const activeServices: string[] = [];
+
+    for (const serviceId of uniqueServiceIds) {
+      // Skip if removed by calendar_dates
+      if (removedServices.has(serviceId)) continue;
+
+      // If added by calendar_dates, include it
+      if (addedServices.has(serviceId)) {
+        activeServices.push(serviceId);
+        continue;
+      }
+
+      // Check regular calendar
+      const calendar = gtfsInstance.getCalendarByServiceId(serviceId);
+      if (calendar) {
+        // Check if date is within service date range
+        if (date >= calendar.start_date && date <= calendar.end_date) {
+          // Check if service runs on this day of week
+          if (calendar[dayName] === 1) {
+            activeServices.push(serviceId);
+          }
+        }
+      }
+    }
+
+    return activeServices;
+  },
+
+  /**
+   * Search for stops by splitting the query into words and finding stops matching any word.
+   * This is useful when the stop name may be incomplete or misspelled.
+   * Returns stops with a match score indicating how many words matched.
+   */
+  searchStopsByWords(query: string, limit: number = 20): StopWithScore[] {
+    if (!gtfsInstance) {
+      throw new Error('GTFS not initialized');
+    }
+
+    // Split query into words, filter out short words and normalize
+    const words = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(word => word.length >= 2)
+      .map(word => word.normalize('NFD').replace(/[\u0300-\u036f]/g, '')); // Remove accents
+
+    if (words.length === 0) {
+      return [];
+    }
+
+    // Search for each word and collect results
+    const stopMap = new Map<string, StopWithScore>();
+
+    for (const word of words) {
+      const stops = gtfsInstance.getStops({ name: word, limit: 100 });
+
+      for (const stop of stops) {
+        const existing = stopMap.get(stop.stop_id);
+        if (existing) {
+          // Increment match score and add matched word
+          existing.matchScore += 1;
+          if (!existing.matchedWords.includes(word)) {
+            existing.matchedWords.push(word);
+          }
+        } else {
+          stopMap.set(stop.stop_id, {
+            ...stop,
+            matchScore: 1,
+            matchedWords: [word],
+          });
+        }
+      }
+    }
+
+    // Sort by match score (descending), then by stop name
+    const results = Array.from(stopMap.values())
+      .sort((a, b) => {
+        if (b.matchScore !== a.matchScore) {
+          return b.matchScore - a.matchScore;
+        }
+        return (a.stop_name || '').localeCompare(b.stop_name || '');
+      })
+      .slice(0, limit);
+
+    return results;
   },
 
   close(): void {

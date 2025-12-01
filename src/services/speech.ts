@@ -1,3 +1,11 @@
+import type { Language } from '../stores/settingsStore';
+
+// Map our language codes to Web Speech API language codes
+const SPEECH_LANGUAGE_MAP: Record<Language, string> = {
+  fr: 'fr-FR',
+  en: 'en-US',
+};
+
 // Web Speech API types
 interface SpeechRecognitionConstructor {
   new (): SpeechRecognition;
@@ -69,7 +77,7 @@ export function isSpeechSynthesisSupported(): boolean {
 /**
  * Start speech recognition and return a promise with the transcript
  */
-export function startSpeechRecognition(): Promise<string> {
+export function startSpeechRecognition(language: Language = 'fr'): Promise<string> {
   return new Promise((resolve, reject) => {
     const SpeechRecognitionClass =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -82,7 +90,7 @@ export function startSpeechRecognition(): Promise<string> {
     const recognition = new SpeechRecognitionClass();
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.lang = 'en-US';
+    recognition.lang = SPEECH_LANGUAGE_MAP[language];
 
     let finalTranscript = '';
 
@@ -114,7 +122,7 @@ export function startSpeechRecognition(): Promise<string> {
 /**
  * Speak text using Web Speech Synthesis
  */
-export function speak(text: string): Promise<void> {
+export function speak(text: string, language: Language = 'fr'): Promise<void> {
   return new Promise((resolve, reject) => {
     if (!isSpeechSynthesisSupported()) {
       reject(new Error('Speech Synthesis not supported'));
@@ -125,7 +133,7 @@ export function speak(text: string): Promise<void> {
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US';
+    utterance.lang = SPEECH_LANGUAGE_MAP[language];
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
     utterance.volume = 1.0;

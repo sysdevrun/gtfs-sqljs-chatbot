@@ -1,19 +1,72 @@
 import type { GtfsWorkerApi } from '../workers/gtfs.worker';
 import type { StopFilters, RouteFilters, TripFilters, StopTimeFilters } from '../types';
 
-export type ToolName = 'getStops' | 'getRoutes' | 'getTrips' | 'getStopTimes';
+export type ToolName = 'getCurrentDateTime' | 'getStops' | 'getRoutes' | 'getTrips' | 'getStopTimes' | 'searchStopsByWords';
 
 export interface ToolInput {
   [key: string]: unknown;
 }
 
+/**
+ * Get the current date and time in various formats useful for GTFS queries
+ */
+function getCurrentDateTime(): {
+  date: string;
+  time: string;
+  dateYYYYMMDD: string;
+  dayOfWeek: string;
+  isoDateTime: string;
+  timezone: string;
+} {
+  const now = new Date();
+
+  // Get date in YYYYMMDD format (for GTFS date filters)
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const dateYYYYMMDD = `${year}${month}${day}`;
+
+  // Get time in HH:MM:SS format
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const time = `${hours}:${minutes}:${seconds}`;
+
+  // Get day of week
+  const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const dayOfWeek = daysOfWeek[now.getDay()];
+
+  // Get timezone
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  return {
+    date: `${year}-${month}-${day}`,
+    time,
+    dateYYYYMMDD,
+    dayOfWeek,
+    isoDateTime: now.toISOString(),
+    timezone,
+  };
+}
+
 export async function executeTool(
-  gtfsApi: GtfsWorkerApi,
+  gtfsApi: GtfsWorkerApi | null,
   toolName: string,
   input: ToolInput
 ): Promise<string> {
   try {
     let result: unknown;
+
+    // getCurrentDateTime doesn't need GTFS
+    if (toolName === 'getCurrentDateTime') {
+      result = getCurrentDateTime();
+      return JSON.stringify(result, null, 2);
+    }
+
+    // All other tools need GTFS
+    if (!gtfsApi) {
+      return JSON.stringify({ error: 'GTFS not initialized' });
+    }
 
     switch (toolName) {
       case 'getStops': {
@@ -45,8 +98,14 @@ export async function executeTool(
           filters.serviceIds = ids.includes(',') ? ids.split(',').map((s) => s.trim()) : ids;
         }
         if (input.directionId !== undefined) filters.directionId = Number(input.directionId);
+        // If date is provided, get active service IDs for that date
+        if (input.date && !input.serviceIds) {
+          const activeServiceIds = await gtfsApi.getActiveServiceIds(String(input.date));
+          if (activeServiceIds.length > 0) {
+            filters.serviceIds = activeServiceIds;
+          }
+        }
         if (input.limit) filters.limit = Number(input.limit);
-        // Note: date filter is handled by gtfs-sqljs internally
         result = await gtfsApi.getTrips(filters);
         break;
       }
@@ -60,8 +119,22 @@ export async function executeTool(
           const ids = String(input.serviceIds);
           filters.serviceIds = ids.includes(',') ? ids.split(',').map((s) => s.trim()) : ids;
         }
+        // If date is provided, get active service IDs for that date
+        if (input.date && !input.serviceIds) {
+          const activeServiceIds = await gtfsApi.getActiveServiceIds(String(input.date));
+          if (activeServiceIds.length > 0) {
+            filters.serviceIds = activeServiceIds;
+          }
+        }
         if (input.limit) filters.limit = Number(input.limit);
         result = await gtfsApi.getStopTimes(filters);
+        break;
+      }
+
+      case 'searchStopsByWords': {
+        const query = String(input.query || '');
+        const limit = input.limit ? Number(input.limit) : 20;
+        result = await gtfsApi.searchStopsByWords(query, limit);
         break;
       }
 

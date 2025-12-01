@@ -1,26 +1,42 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam, Tool } from '@anthropic-ai/sdk/resources/messages';
 
-const SYSTEM_PROMPT = `You are a helpful transit assistant. You help users find information about bus routes, stops, and schedules using GTFS (General Transit Feed Specification) data.
-
-Use the available tools to query the GTFS database:
-- getStops: Search for transit stops by ID, code, name, or trip
-- getRoutes: Search for transit routes/lines
-- getTrips: Search for scheduled trips on routes
-- getStopTimes: Get arrival/departure times at stops
-
-Be concise in your responses as they will be spoken aloud. When presenting results:
-- Summarize key information clearly
-- Mention stop names and route names rather than just IDs when possible
-- Format times in a human-readable way
-
-If a query returns no results, suggest alternative search terms or approaches.`;
-
 export const GTFS_TOOLS: Tool[] = [
+  {
+    name: 'getCurrentDateTime',
+    description:
+      'Get the current date and time. ALWAYS call this tool first before any other GTFS queries to know the current date for filtering trips and schedules.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
+    name: 'getRoutes',
+    description:
+      'Search for transit routes/lines. Returns route short name (the main identifier to use when referring to routes), long name, type, and colors. NEVER refer to routes by their internal ID - always use route_short_name.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        routeId: {
+          type: 'string',
+          description: 'Exact route ID to look up (internal use only)',
+        },
+        agencyId: {
+          type: 'string',
+          description: 'Filter routes by agency ID',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return (default: 10)',
+        },
+      },
+    },
+  },
   {
     name: 'getStops',
     description:
-      'Search for transit stops/stations. Use to find stop IDs, names, and locations. You can search by stop ID, stop code, name (partial match), or get stops for a specific trip.',
+      'Search for transit stops/stations. You can search by stop ID, stop code, name (partial match), or get stops for a specific trip. Note: stops often have parent stops that have no stop times - always check child stops too.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -48,31 +64,28 @@ export const GTFS_TOOLS: Tool[] = [
     },
   },
   {
-    name: 'getRoutes',
+    name: 'searchStopsByWords',
     description:
-      'Search for transit routes/lines. Use to find route IDs, names, and details. Returns route short name, long name, type, and colors.',
+      'Search for stops by splitting a query into individual words and finding stops matching any word. Use this when the stop name may be incomplete or when the user mentions only part of the stop name. Returns all matching stops with a match score.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        routeId: {
+        query: {
           type: 'string',
-          description: 'Exact route ID to look up',
-        },
-        agencyId: {
-          type: 'string',
-          description: 'Filter routes by agency ID',
+          description: 'Search query (will be split into words, each word searched separately)',
         },
         limit: {
           type: 'number',
-          description: 'Maximum number of results to return (default: 10)',
+          description: 'Maximum number of results to return (default: 20)',
         },
       },
+      required: ['query'],
     },
   },
   {
     name: 'getTrips',
     description:
-      'Search for trips (scheduled journeys on a route). Use to find trip IDs, headsigns, and schedule information.',
+      'Search for trips (scheduled journeys on a route). Returns trip_headsign (the main identifier to use when referring to trips) and schedule information. ALWAYS pass the date parameter to filter active trips. Use trip_headsign to describe trips to users, never the trip ID.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -94,7 +107,7 @@ export const GTFS_TOOLS: Tool[] = [
         },
         date: {
           type: 'string',
-          description: 'Filter by date in YYYYMMDD format (returns trips active on that date)',
+          description: 'REQUIRED: Filter by date in YYYYMMDD format (returns trips active on that date). Get this from getCurrentDateTime first.',
         },
         limit: {
           type: 'number',
@@ -106,7 +119,7 @@ export const GTFS_TOOLS: Tool[] = [
   {
     name: 'getStopTimes',
     description:
-      'Get scheduled arrival/departure times at stops. Use to find when buses/trains arrive at specific stops.',
+      'Get scheduled arrival/departure times at stops. ALWAYS pass the date parameter to filter schedules. If no results for a stop, try searching for child stops with the same name.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -128,7 +141,7 @@ export const GTFS_TOOLS: Tool[] = [
         },
         date: {
           type: 'string',
-          description: 'Filter by date in YYYYMMDD format',
+          description: 'REQUIRED: Filter by date in YYYYMMDD format. Get this from getCurrentDateTime first.',
         },
         limit: {
           type: 'number',
@@ -146,7 +159,8 @@ export interface ClaudeResponse {
 
 export async function sendMessage(
   apiKey: string,
-  messages: MessageParam[]
+  messages: MessageParam[],
+  systemPrompt: string
 ): Promise<ClaudeResponse> {
   const client = new Anthropic({
     apiKey,
@@ -156,7 +170,7 @@ export async function sendMessage(
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1024,
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     tools: GTFS_TOOLS,
     messages,
   });

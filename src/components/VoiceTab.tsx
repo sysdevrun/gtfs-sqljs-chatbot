@@ -1,5 +1,5 @@
 import { useChatStore } from '../stores/chatStore';
-import { useVoiceChat, type VoiceChatState } from '../hooks/useVoiceChat';
+import { useVoiceChat, type VoiceChatState, type WaitingFor } from '../hooks/useVoiceChat';
 import { isSpeechRecognitionSupported } from '../services/speech';
 import type { GtfsLoadingState, ProgressInfo } from '../types';
 import type { GtfsWorkerApi } from '../workers/gtfs.worker';
@@ -24,6 +24,21 @@ function getStateLabel(state: VoiceChatState): string {
       return 'Speaking response. Press button to stop.';
     case 'error':
       return 'An error occurred. Press button to try again.';
+  }
+}
+
+function getWaitingForLabel(waitingFor: WaitingFor): string {
+  switch (waitingFor) {
+    case 'idle':
+      return '';
+    case 'listening':
+      return 'En attente de votre voix...';
+    case 'claude':
+      return 'En attente de Claude...';
+    case 'tool':
+      return 'Execution outil...';
+    case 'speaking':
+      return 'Lecture de la reponse...';
   }
 }
 
@@ -67,7 +82,7 @@ export function VoiceTab({
   gtfsError,
 }: VoiceTabProps) {
   const { lastResponse, isProcessing } = useChatStore();
-  const { state, errorMessage, startVoiceChat, stopChat, resetConversation } =
+  const { state, errorMessage, toolStatus, startVoiceChat, stopChat, resetConversation } =
     useVoiceChat(gtfsApi);
 
   const isGtfsReady = gtfsLoadingState === 'ready';
@@ -185,6 +200,35 @@ export function VoiceTab({
          state === 'processing' ? 'Processing...' :
          state === 'speaking' ? 'Speaking...' : 'Error'}
       </div>
+
+      {/* Tool Status Indicator */}
+      {(toolStatus.waitingFor !== 'idle' || toolStatus.lastToolUsed) && (
+        <div
+          className="bg-gray-100 border border-gray-200 rounded-lg p-3 max-w-md w-full text-center"
+          role="status"
+          aria-live="polite"
+        >
+          {toolStatus.waitingFor !== 'idle' && (
+            <div className="flex items-center justify-center space-x-2 text-gray-700">
+              <div
+                className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"
+                aria-hidden="true"
+              />
+              <span className="text-sm font-medium">
+                {getWaitingForLabel(toolStatus.waitingFor)}
+              </span>
+            </div>
+          )}
+          {toolStatus.lastToolUsed && (
+            <div className="mt-2 text-xs text-gray-500">
+              <span className="font-medium">Dernier outil:</span>{' '}
+              <span className="font-mono bg-gray-200 px-1 rounded">
+                {toolStatus.lastToolUsed}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Error Message */}
       {errorMessage && (
