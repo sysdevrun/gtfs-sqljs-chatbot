@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { VoiceTab } from './VoiceTab';
 import { SettingsTab } from './SettingsTab';
 import { DebugTab } from './DebugTab';
 import { useGtfsWorker } from '../hooks/useGtfsWorker';
+import { useSettingsStore } from '../stores/settingsStore';
 import type { AppTab } from '../types';
 
 const tabs: { id: AppTab; label: string; ariaLabel: string }[] = [
@@ -11,9 +12,47 @@ const tabs: { id: AppTab; label: string; ariaLabel: string }[] = [
   { id: 'debug', label: 'Debug', ariaLabel: 'Debug information' },
 ];
 
+// Extract API key from URL hash if present
+function extractApiKeyFromHash(): string | null {
+  const hash = window.location.hash;
+  if (!hash) return null;
+
+  // Parse hash parameters (format: #param1=value1&param2=value2)
+  const params = new URLSearchParams(hash.slice(1));
+  return params.get('claude-key');
+}
+
+// Remove claude-key from URL hash
+function removeApiKeyFromHash(): void {
+  const hash = window.location.hash;
+  if (!hash) return;
+
+  const params = new URLSearchParams(hash.slice(1));
+  if (params.has('claude-key')) {
+    params.delete('claude-key');
+    const newHash = params.toString();
+    // Update URL without triggering navigation
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + window.location.search + (newHash ? '#' + newHash : '')
+    );
+  }
+}
+
 export function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('voice');
   const { api, loadingState, progress, error, reload } = useGtfsWorker();
+  const setApiKey = useSettingsStore((s) => s.setApiKey);
+
+  // Check for API key in URL hash on mount
+  useEffect(() => {
+    const keyFromHash = extractApiKeyFromHash();
+    if (keyFromHash) {
+      setApiKey(keyFromHash);
+      removeApiKeyFromHash();
+    }
+  }, [setApiKey]);
 
   return (
     <div className="min-h-screen bg-gray-50">
