@@ -10,19 +10,19 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
   en: 'English',
 };
 
-export type Model = 'claude-sonnet-4-5-20250514' | 'claude-haiku-4-5-20250514' | 'claude-opus-4-5-20250514';
+export type Model = 'claude-sonnet-4-5-20250929' | 'claude-haiku-4-5-20251001' | 'claude-opus-4-5-20251101';
 
 export const MODEL_LABELS: Record<Model, string> = {
-  'claude-sonnet-4-5-20250514': 'Claude Sonnet 4.5',
-  'claude-haiku-4-5-20250514': 'Claude Haiku 4.5',
-  'claude-opus-4-5-20250514': 'Claude Opus 4.5',
+  'claude-sonnet-4-5-20250929': 'Claude Sonnet 4.5',
+  'claude-haiku-4-5-20251001': 'Claude Haiku 4.5',
+  'claude-opus-4-5-20251101': 'Claude Opus 4.5',
 };
 
 // Pricing per million tokens (USD)
 export const MODEL_PRICING: Record<Model, { input: number; output: number }> = {
-  'claude-sonnet-4-5-20250514': { input: 3, output: 15 },
-  'claude-haiku-4-5-20250514': { input: 1, output: 5 },
-  'claude-opus-4-5-20250514': { input: 5, output: 25 },
+  'claude-sonnet-4-5-20250929': { input: 3, output: 15 },
+  'claude-haiku-4-5-20251001': { input: 1, output: 5 },
+  'claude-opus-4-5-20251101': { input: 5, output: 25 },
 };
 
 export const DEFAULT_SYSTEM_PROMPT = `Tu es un assistant de transport en commun. Tu aides les utilisateurs a trouver des informations sur les lignes de bus, les arrets et les horaires a partir des donnees GTFS (General Transit Feed Specification).
@@ -111,7 +111,7 @@ export const useSettingsStore = create<SettingsState>()(
       apiKey: '',
       gtfsUrl: DEFAULT_GTFS_URL,
       language: 'fr',
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-sonnet-4-5-20250929',
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       setApiKey: (apiKey) => set({ apiKey }),
       setGtfsUrl: (gtfsUrl) => set({ gtfsUrl }),

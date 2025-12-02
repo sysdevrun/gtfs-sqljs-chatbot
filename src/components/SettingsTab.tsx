@@ -1,5 +1,5 @@
 import { useState, useEffect, useId } from 'react';
-import { useSettingsStore, LANGUAGE_LABELS, MODEL_LABELS, DEFAULT_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT_EN } from '../stores/settingsStore';
+import { useSettingsStore, LANGUAGE_LABELS, MODEL_LABELS, MODEL_PRICING, DEFAULT_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT_EN } from '../stores/settingsStore';
 import type { Language, Model } from '../stores/settingsStore';
 
 interface SettingsTabProps {
@@ -138,21 +138,26 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
         >
           Claude Model
         </label>
-        <select
-          id="model"
-          value={localModel}
-          onChange={(e) => setLocalModel(e.target.value as Model)}
-          aria-describedby={modelDescId}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-        >
-          {(Object.keys(MODEL_LABELS) as Model[]).map((m) => (
-            <option key={m} value={m}>
-              {MODEL_LABELS[m]}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-3">
+          <select
+            id="model"
+            value={localModel}
+            onChange={(e) => setLocalModel(e.target.value as Model)}
+            aria-describedby={modelDescId}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+          >
+            {(Object.keys(MODEL_LABELS) as Model[]).map((m) => (
+              <option key={m} value={m}>
+                {MODEL_LABELS[m]}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-gray-500 whitespace-nowrap">
+            ${MODEL_PRICING[localModel].input}/${MODEL_PRICING[localModel].output} /MTok
+          </span>
+        </div>
         <p id={modelDescId} className="text-xs text-gray-500">
-          Claude model to use for responses. Haiku is faster and cheaper, Sonnet is more capable, Opus is most capable.
+          Haiku is faster and cheaper, Sonnet is balanced, Opus is most capable. Pricing: input/output per million tokens.
         </p>
       </div>
 

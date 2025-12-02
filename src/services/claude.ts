@@ -181,7 +181,7 @@ export async function sendMessage(
   apiKey: string,
   messages: MessageParam[],
   systemPrompt: string,
-  model: string = 'claude-sonnet-4-5-20250514'
+  model: string = 'claude-sonnet-4-5-20250929'
 ): Promise<ClaudeResponse> {
   const client = new Anthropic({
     apiKey,
