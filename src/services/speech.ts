@@ -150,18 +150,41 @@ function getVoices(): Promise<SpeechSynthesisVoice[]> {
 
 /**
  * Find the best voice for a language
+ * Prefers Google voices as they are more reliable in Chrome
  */
 function findVoiceForLanguage(voices: SpeechSynthesisVoice[], lang: string): SpeechSynthesisVoice | null {
-  // First try to find a voice that exactly matches the language
-  let voice = voices.find(v => v.lang === lang);
-  if (voice) return voice;
-
-  // Try to find a voice that starts with the language code (e.g., 'fr' for 'fr-FR')
   const langPrefix = lang.split('-')[0];
+
+  // First priority: Google voice with exact language match
+  let voice = voices.find(v => v.name.toLowerCase().includes('google') && v.lang === lang);
+  if (voice) {
+    console.log('[TTS] Found Google voice with exact match:', voice.name);
+    return voice;
+  }
+
+  // Second priority: Google voice with language prefix match
+  voice = voices.find(v => v.name.toLowerCase().includes('google') && v.lang.startsWith(langPrefix));
+  if (voice) {
+    console.log('[TTS] Found Google voice with prefix match:', voice.name);
+    return voice;
+  }
+
+  // Third priority: Any voice with exact language match
+  voice = voices.find(v => v.lang === lang);
+  if (voice) {
+    console.log('[TTS] Found system voice with exact match:', voice.name);
+    return voice;
+  }
+
+  // Fourth priority: Any voice with language prefix match
   voice = voices.find(v => v.lang.startsWith(langPrefix));
-  if (voice) return voice;
+  if (voice) {
+    console.log('[TTS] Found system voice with prefix match:', voice.name);
+    return voice;
+  }
 
   // Fall back to any available voice
+  console.log('[TTS] No matching voice found, using fallback');
   return voices[0] || null;
 }
 
