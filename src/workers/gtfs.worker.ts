@@ -274,10 +274,10 @@ const gtfsApi = {
       throw new Error('GTFS not initialized');
     }
 
-    const maxPaths = options?.maxPaths ?? 10;
+    const maxPaths = options?.maxPaths ?? 2;
     const maxTransfers = options?.maxTransfers ?? 3;
     const minTransferDuration = options?.minTransferDuration ?? 300; // 5 minutes default
-    const journeysCount = options?.journeysCount ?? 3;
+    const journeysCount = options?.journeysCount ?? 2;
 
     // Create graph builder and build graph for the date
     const graphBuilder = new GraphBuilder(gtfsInstance);

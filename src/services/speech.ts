@@ -124,16 +124,21 @@ export function startSpeechRecognition(language: Language = 'fr'): Promise<strin
  */
 export function speak(text: string, language: Language = 'fr'): Promise<void> {
   return new Promise((resolve, reject) => {
+    console.log('[TTS] speak() called with text length:', text.length);
+
     if (!isSpeechSynthesisSupported()) {
+      console.error('[TTS] Speech Synthesis not supported');
       reject(new Error('Speech Synthesis not supported'));
       return;
     }
 
     // Cancel any ongoing speech
+    console.log('[TTS] Cancelling any ongoing speech');
     window.speechSynthesis.cancel();
 
     // Remove markdown formatting that would be read aloud
     const cleanedText = text.replace(/\*\*/g, '');
+    console.log('[TTS] Cleaned text:', cleanedText.substring(0, 100) + '...');
 
     const utterance = new SpeechSynthesisUtterance(cleanedText);
     utterance.lang = SPEECH_LANGUAGE_MAP[language];
@@ -141,17 +146,64 @@ export function speak(text: string, language: Language = 'fr'): Promise<void> {
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
 
-    utterance.onend = () => resolve();
+    console.log('[TTS] Created utterance with lang:', utterance.lang);
+
+    utterance.onstart = () => {
+      console.log('[TTS] Speech started');
+    };
+
+    utterance.onend = () => {
+      console.log('[TTS] Speech ended normally');
+      resolve();
+    };
+
     utterance.onerror = (event) => {
-      // Ignore 'interrupted' errors as they happen when we cancel
-      if (event.error === 'interrupted') {
+      console.error('[TTS] Speech error:', event.error);
+      // Ignore 'interrupted' and 'canceled' errors as they happen when we cancel
+      if (event.error === 'interrupted' || event.error === 'canceled') {
         resolve();
       } else {
         reject(new Error(`Speech synthesis error: ${event.error}`));
       }
     };
 
-    window.speechSynthesis.speak(utterance);
+    // Chrome bug workaround: small delay after cancel before speaking
+    // and resume in case synthesis is paused
+    setTimeout(() => {
+      console.log('[TTS] After delay - calling speechSynthesis.speak()');
+      console.log('[TTS] speechSynthesis.speaking:', window.speechSynthesis.speaking);
+      console.log('[TTS] speechSynthesis.paused:', window.speechSynthesis.paused);
+      console.log('[TTS] speechSynthesis.pending:', window.speechSynthesis.pending);
+
+      // Resume in case it's paused (Chrome bug)
+      if (window.speechSynthesis.paused) {
+        console.log('[TTS] Resuming paused synthesis');
+        window.speechSynthesis.resume();
+      }
+
+      window.speechSynthesis.speak(utterance);
+
+      console.log('[TTS] After speak() - speaking:', window.speechSynthesis.speaking);
+      console.log('[TTS] After speak() - paused:', window.speechSynthesis.paused);
+      console.log('[TTS] After speak() - pending:', window.speechSynthesis.pending);
+
+      // Chrome bug: sometimes speech gets stuck, use a workaround
+      // by periodically calling resume()
+      const resumeInterval = setInterval(() => {
+        if (!window.speechSynthesis.speaking) {
+          clearInterval(resumeInterval);
+          return;
+        }
+        if (window.speechSynthesis.paused) {
+          console.log('[TTS] Resuming paused synthesis (interval)');
+          window.speechSynthesis.resume();
+        }
+      }, 100);
+
+      // Clean up interval when done
+      utterance.addEventListener('end', () => clearInterval(resumeInterval));
+      utterance.addEventListener('error', () => clearInterval(resumeInterval));
+    }, 50);
   });
 }
 

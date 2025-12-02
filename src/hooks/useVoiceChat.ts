@@ -335,15 +335,25 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
 
   const speakLastResponse = useCallback(async () => {
     const { lastResponse } = useChatStore.getState();
-    if (!lastResponse) return;
+    console.log('[useVoiceChat] speakLastResponse called, lastResponse length:', lastResponse?.length);
+    if (!lastResponse) {
+      console.log('[useVoiceChat] No lastResponse, returning');
+      return;
+    }
 
+    console.log('[useVoiceChat] Calling stopSpeaking()');
     stopSpeaking();
     setState('speaking');
     setToolStatus(prev => ({ ...prev, waitingFor: 'speaking' }));
 
     try {
+      console.log('[useVoiceChat] Calling speak()');
       await speak(lastResponse, language);
+      console.log('[useVoiceChat] speak() completed');
+    } catch (error) {
+      console.error('[useVoiceChat] speak() error:', error);
     } finally {
+      console.log('[useVoiceChat] Setting state to idle');
       setState('idle');
       setToolStatus(prev => ({ ...prev, waitingFor: 'idle' }));
     }
