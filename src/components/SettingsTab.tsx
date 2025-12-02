@@ -1,6 +1,6 @@
 import { useState, useEffect, useId } from 'react';
-import { useSettingsStore, LANGUAGE_LABELS, DEFAULT_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT_EN } from '../stores/settingsStore';
-import type { Language } from '../stores/settingsStore';
+import { useSettingsStore, LANGUAGE_LABELS, MODEL_LABELS, DEFAULT_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT_EN } from '../stores/settingsStore';
+import type { Language, Model } from '../stores/settingsStore';
 
 interface SettingsTabProps {
   onGtfsUrlChange: () => void;
@@ -17,15 +17,17 @@ function buildUrlWithApiKey(apiKey: string): string {
 }
 
 export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
-  const { apiKey, gtfsUrl, language, systemPrompt, setApiKey, setGtfsUrl, setLanguage, setSystemPrompt } = useSettingsStore();
+  const { apiKey, gtfsUrl, language, model, systemPrompt, setApiKey, setGtfsUrl, setLanguage, setModel, setSystemPrompt } = useSettingsStore();
   const apiKeyDescId = useId();
   const gtfsUrlDescId = useId();
   const languageDescId = useId();
+  const modelDescId = useId();
   const systemPromptDescId = useId();
 
   const [localApiKey, setLocalApiKey] = useState(apiKey);
   const [localGtfsUrl, setLocalGtfsUrl] = useState(gtfsUrl);
   const [localLanguage, setLocalLanguage] = useState<Language>(language);
+  const [localModel, setLocalModel] = useState<Model>(model);
   const [localSystemPrompt, setLocalSystemPrompt] = useState(systemPrompt);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -34,8 +36,9 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
     setLocalApiKey(apiKey);
     setLocalGtfsUrl(gtfsUrl);
     setLocalLanguage(language);
+    setLocalModel(model);
     setLocalSystemPrompt(systemPrompt);
-  }, [apiKey, gtfsUrl, language, systemPrompt]);
+  }, [apiKey, gtfsUrl, language, model, systemPrompt]);
 
   const handleSave = () => {
     const urlChanged = localGtfsUrl !== gtfsUrl;
@@ -43,6 +46,7 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
     setApiKey(localApiKey);
     setGtfsUrl(localGtfsUrl);
     setLanguage(localLanguage);
+    setModel(localModel);
     setSystemPrompt(localSystemPrompt);
 
     setSaved(true);
@@ -123,6 +127,32 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
         </select>
         <p id={languageDescId} className="text-xs text-gray-500">
           Langue pour la reconnaissance vocale et la synthese vocale. / Language for voice recognition and synthesis.
+        </p>
+      </div>
+
+      {/* Model */}
+      <div className="space-y-2">
+        <label
+          htmlFor="model"
+          className="block text-sm font-medium text-gray-700"
+        >
+          Claude Model
+        </label>
+        <select
+          id="model"
+          value={localModel}
+          onChange={(e) => setLocalModel(e.target.value as Model)}
+          aria-describedby={modelDescId}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+        >
+          {(Object.keys(MODEL_LABELS) as Model[]).map((m) => (
+            <option key={m} value={m}>
+              {MODEL_LABELS[m]}
+            </option>
+          ))}
+        </select>
+        <p id={modelDescId} className="text-xs text-gray-500">
+          Claude model to use for responses. Haiku is faster and cheaper, Sonnet is more capable, Opus is most capable.
         </p>
       </div>
 

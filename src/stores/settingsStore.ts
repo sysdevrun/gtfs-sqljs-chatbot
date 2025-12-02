@@ -10,6 +10,21 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
   en: 'English',
 };
 
+export type Model = 'claude-sonnet-4-20250514' | 'claude-haiku-3-5-20241022' | 'claude-opus-4-20250514';
+
+export const MODEL_LABELS: Record<Model, string> = {
+  'claude-sonnet-4-20250514': 'Claude Sonnet 4',
+  'claude-haiku-3-5-20241022': 'Claude 3.5 Haiku',
+  'claude-opus-4-20250514': 'Claude Opus 4',
+};
+
+// Pricing per million tokens (USD)
+export const MODEL_PRICING: Record<Model, { input: number; output: number }> = {
+  'claude-sonnet-4-20250514': { input: 3, output: 15 },
+  'claude-haiku-3-5-20241022': { input: 0.80, output: 4 },
+  'claude-opus-4-20250514': { input: 15, output: 75 },
+};
+
 export const DEFAULT_SYSTEM_PROMPT = `Tu es un assistant de transport en commun. Tu aides les utilisateurs a trouver des informations sur les lignes de bus, les arrets et les horaires a partir des donnees GTFS (General Transit Feed Specification).
 
 Utilise les outils disponibles pour interroger la base de donnees GTFS:
@@ -80,10 +95,12 @@ interface SettingsState {
   apiKey: string;
   gtfsUrl: string;
   language: Language;
+  model: Model;
   systemPrompt: string;
   setApiKey: (key: string) => void;
   setGtfsUrl: (url: string) => void;
   setLanguage: (language: Language) => void;
+  setModel: (model: Model) => void;
   setSystemPrompt: (prompt: string) => void;
   resetSystemPrompt: () => void;
 }
@@ -94,10 +111,12 @@ export const useSettingsStore = create<SettingsState>()(
       apiKey: '',
       gtfsUrl: DEFAULT_GTFS_URL,
       language: 'fr',
+      model: 'claude-sonnet-4-20250514',
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       setApiKey: (apiKey) => set({ apiKey }),
       setGtfsUrl: (gtfsUrl) => set({ gtfsUrl }),
       setLanguage: (language) => set({ language }),
+      setModel: (model) => set({ model }),
       setSystemPrompt: (systemPrompt) => set({ systemPrompt }),
       resetSystemPrompt: () => {
         const lang = get().language;

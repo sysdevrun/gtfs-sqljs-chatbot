@@ -180,7 +180,8 @@ export interface ClaudeResponse {
 export async function sendMessage(
   apiKey: string,
   messages: MessageParam[],
-  systemPrompt: string
+  systemPrompt: string,
+  model: string = 'claude-sonnet-4-20250514'
 ): Promise<ClaudeResponse> {
   const client = new Anthropic({
     apiKey,
@@ -188,7 +189,7 @@ export async function sendMessage(
   });
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model,
     max_tokens: 1024,
     system: systemPrompt,
     tools: GTFS_TOOLS,
