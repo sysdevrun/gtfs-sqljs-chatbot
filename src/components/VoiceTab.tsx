@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useChatStore } from '../stores/chatStore';
+import { useSettingsStore, MODEL_PRICING } from '../stores/settingsStore';
 import { useVoiceChat, type VoiceChatState, type WaitingFor } from '../hooks/useVoiceChat';
 import { isSpeechRecognitionSupported } from '../services/speech';
 import type { GtfsLoadingState, ProgressInfo } from '../types';
@@ -84,6 +85,13 @@ function formatTokenCount(count: number): string {
   return count.toString();
 }
 
+function formatPrice(priceUsd: number): string {
+  if (priceUsd < 0.01) {
+    return `$${(priceUsd * 100).toFixed(2)}c`;
+  }
+  return `$${priceUsd.toFixed(2)}`;
+}
+
 // Rolling text animation component
 function RollingText({ text, className }: { text: string; className?: string }) {
   const [displayText, setDisplayText] = useState(text);
@@ -120,6 +128,7 @@ export function VoiceTab({
   gtfsError,
 }: VoiceTabProps) {
   const { lastResponse } = useChatStore();
+  const model = useSettingsStore((s) => s.model);
   const {
     state,
     errorMessage,
@@ -421,16 +430,22 @@ export function VoiceTab({
         </button>
 
         {/* Token Usage (discreet) */}
-        {(tokenStats.totalInputTokens > 0 || tokenStats.totalOutputTokens > 0) && (
-          <div
-            className="text-xs text-gray-400"
-            title={`Input: ${tokenStats.totalInputTokens} tokens, Output: ${tokenStats.totalOutputTokens} tokens`}
-          >
-            <span className="opacity-60">
-              ↑{formatTokenCount(tokenStats.totalInputTokens)} ↓{formatTokenCount(tokenStats.totalOutputTokens)}
-            </span>
-          </div>
-        )}
+        {(tokenStats.totalInputTokens > 0 || tokenStats.totalOutputTokens > 0) && (() => {
+          const pricing = MODEL_PRICING[model];
+          const inputCost = (tokenStats.totalInputTokens / 1_000_000) * pricing.input;
+          const outputCost = (tokenStats.totalOutputTokens / 1_000_000) * pricing.output;
+          const totalCost = inputCost + outputCost;
+          return (
+            <div
+              className="text-xs text-gray-400"
+              title={`Input: ${tokenStats.totalInputTokens} tokens ($${inputCost.toFixed(4)}), Output: ${tokenStats.totalOutputTokens} tokens ($${outputCost.toFixed(4)})`}
+            >
+              <span className="opacity-60">
+                ↑{formatTokenCount(tokenStats.totalInputTokens)} ↓{formatTokenCount(tokenStats.totalOutputTokens)} {formatPrice(totalCost)}
+              </span>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

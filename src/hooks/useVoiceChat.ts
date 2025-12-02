@@ -55,6 +55,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
 
   const apiKey = useSettingsStore((s) => s.apiKey);
   const language = useSettingsStore((s) => s.language);
+  const model = useSettingsStore((s) => s.model);
   const systemPrompt = useSettingsStore((s) => s.systemPrompt);
   const { messages, addMessage, setProcessing, setLastResponse, reset } =
     useChatStore();
@@ -78,7 +79,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
           messageCount: currentMessages.length,
         });
 
-        const response = await sendMessage(apiKey, currentMessages, systemPrompt);
+        const response = await sendMessage(apiKey, currentMessages, systemPrompt, model);
 
         // Accumulate token usage
         setTokenStats(prev => ({
@@ -171,7 +172,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
 
       return finalResponse;
     },
-    [apiKey, systemPrompt, gtfsApi, addLog, addMessage]
+    [apiKey, systemPrompt, model, gtfsApi, addLog, addMessage]
   );
 
   const startVoiceChat = useCallback(async () => {
