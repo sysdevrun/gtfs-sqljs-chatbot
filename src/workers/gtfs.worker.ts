@@ -70,6 +70,77 @@ interface StopWithScore extends Stop {
   matchedWords: string[];
 }
 
+// Types for findItineraryByName
+interface ResolvedStop {
+  stop_id: string;
+  stop_name: string;
+}
+
+interface ResolvedStopWithScore extends ResolvedStop {
+  matchScore: number;
+  matchedWords: string[];
+}
+
+interface ResolvedRoute {
+  route_id: string;
+  route_short_name: string;
+  route_long_name?: string;
+}
+
+interface ResolvedLeg {
+  fromStop: ResolvedStop;
+  toStop: ResolvedStop;
+  route?: ResolvedRoute;
+  tripHeadsign?: string;
+  departureTime: string;
+  arrivalTime: string;
+  isTransfer: boolean;
+}
+
+interface ResolvedJourney {
+  departureTime: string;
+  arrivalTime: string;
+  totalDuration: number;
+  transfers: number;
+  legs: ResolvedLeg[];
+}
+
+interface FindItineraryByNameSuccess {
+  status: 'success';
+  startStop: ResolvedStopWithScore;
+  endStop: ResolvedStopWithScore;
+  journeys: ResolvedJourney[];
+  alternativeStartStops?: ResolvedStopWithScore[];
+  alternativeEndStops?: ResolvedStopWithScore[];
+}
+
+interface FindItineraryByNameError {
+  status: 'error';
+  errorType:
+    | 'START_STOP_NOT_FOUND'
+    | 'END_STOP_NOT_FOUND'
+    | 'BOTH_STOPS_NOT_FOUND'
+    | 'AMBIGUOUS_START_STOP'
+    | 'AMBIGUOUS_END_STOP'
+    | 'NO_ITINERARY_FOUND'
+    | 'SAME_START_AND_END'
+    | 'INVALID_DATE_TIME';
+  message: string;
+  [key: string]: unknown;
+}
+
+type FindItineraryByNameResult = FindItineraryByNameSuccess | FindItineraryByNameError;
+
+/**
+ * Convert seconds since midnight to HH:MM:SS format
+ */
+function secondsToTimeString(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 const gtfsApi = {
   async initialize(
     url: string,
@@ -319,6 +390,327 @@ const gtfsApi = {
     return {
       journeys: allJourneys.slice(0, journeysCount),
       paths: usedPaths,
+    };
+  },
+
+  /**
+   * Find itineraries between two stops using fuzzy name matching.
+   * Combines stop search, itinerary computation, and name resolution in one call.
+   * Returns fully resolved data with human-readable names.
+   */
+  findItineraryByName(
+    startName: string,
+    endName: string,
+    date: string,
+    departureTime: string,
+    options?: {
+      maxTransfers?: number;
+      journeysCount?: number;
+    }
+  ): FindItineraryByNameResult {
+    if (!gtfsInstance) {
+      throw new Error('GTFS not initialized');
+    }
+
+    // 1. Validate date format (YYYYMMDD)
+    if (!/^\d{8}$/.test(date)) {
+      return {
+        status: 'error',
+        errorType: 'INVALID_DATE_TIME',
+        message: 'Invalid date format',
+        providedDate: date,
+        expectedDateFormat: 'YYYYMMDD (e.g., 20251203)',
+      };
+    }
+
+    // 2. Validate time format (HH:MM:SS or HH:MM)
+    if (!/^\d{2}:\d{2}(:\d{2})?$/.test(departureTime)) {
+      return {
+        status: 'error',
+        errorType: 'INVALID_DATE_TIME',
+        message: 'Invalid time format',
+        providedTime: departureTime,
+        expectedTimeFormat: 'HH:MM:SS (e.g., 14:30:00)',
+      };
+    }
+
+    // Normalize time to HH:MM:SS
+    const normalizedTime = departureTime.length === 5 ? `${departureTime}:00` : departureTime;
+
+    // 3. Search for start stop
+    const startStops = this.searchStopsByWords(startName, 10);
+
+    // 4. Search for end stop
+    const endStops = this.searchStopsByWords(endName, 10);
+
+    // 5. Check if both not found
+    if (startStops.length === 0 && endStops.length === 0) {
+      return {
+        status: 'error',
+        errorType: 'BOTH_STOPS_NOT_FOUND',
+        message: `No stops found matching '${startName}' (start) or '${endName}' (end)`,
+        startQuery: startName,
+        endQuery: endName,
+        suggestion: 'Verify both stop names and try again with different spellings',
+      };
+    }
+
+    // 6. Check if start not found
+    if (startStops.length === 0) {
+      return {
+        status: 'error',
+        errorType: 'START_STOP_NOT_FOUND',
+        message: `No stop found matching '${startName}'`,
+        searchedQuery: startName,
+        suggestion: 'Check spelling or try a shorter/different name',
+      };
+    }
+
+    // 7. Check if end not found
+    if (endStops.length === 0) {
+      return {
+        status: 'error',
+        errorType: 'END_STOP_NOT_FOUND',
+        message: `No stop found matching '${endName}'`,
+        searchedQuery: endName,
+        suggestion: 'Check spelling or try a shorter/different name',
+      };
+    }
+
+    // 8. Check for ambiguous start stop
+    // Ambiguous if top 3+ stops have the same score and none is exact match
+    const startTopScore = startStops[0].matchScore;
+    const startSameScoreCount = startStops.filter(s => s.matchScore === startTopScore).length;
+    const startHasExactMatch = startStops.some(
+      s => s.stop_name?.toLowerCase().trim() === startName.toLowerCase().trim()
+    );
+
+    if (startSameScoreCount >= 3 && !startHasExactMatch) {
+      const candidates = startStops
+        .filter(s => s.matchScore === startTopScore)
+        .slice(0, 5)
+        .map(s => ({
+          stop_id: s.stop_id,
+          stop_name: s.stop_name || '',
+          matchScore: s.matchScore,
+        }));
+
+      return {
+        status: 'error',
+        errorType: 'AMBIGUOUS_START_STOP',
+        message: `Multiple stops match '${startName}'. Please be more specific.`,
+        searchedQuery: startName,
+        candidates,
+        suggestion: `Specify which stop: ${candidates.map(c => c.stop_name).join(', ')}?`,
+      };
+    }
+
+    // 9. Check for ambiguous end stop
+    const endTopScore = endStops[0].matchScore;
+    const endSameScoreCount = endStops.filter(s => s.matchScore === endTopScore).length;
+    const endHasExactMatch = endStops.some(
+      s => s.stop_name?.toLowerCase().trim() === endName.toLowerCase().trim()
+    );
+
+    if (endSameScoreCount >= 3 && !endHasExactMatch) {
+      const candidates = endStops
+        .filter(s => s.matchScore === endTopScore)
+        .slice(0, 5)
+        .map(s => ({
+          stop_id: s.stop_id,
+          stop_name: s.stop_name || '',
+          matchScore: s.matchScore,
+        }));
+
+      return {
+        status: 'error',
+        errorType: 'AMBIGUOUS_END_STOP',
+        message: `Multiple stops match '${endName}'. Please be more specific.`,
+        searchedQuery: endName,
+        candidates,
+        suggestion: `Specify which stop: ${candidates.map(c => c.stop_name).join(', ')}?`,
+      };
+    }
+
+    // Select best matching stops
+    const selectedStart = startStops[0];
+    const selectedEnd = endStops[0];
+
+    // 10. Check if same start and end
+    if (selectedStart.stop_id === selectedEnd.stop_id) {
+      return {
+        status: 'error',
+        errorType: 'SAME_START_AND_END',
+        message: `Start and end stops are the same ('${selectedStart.stop_name}')`,
+        stop: {
+          stop_id: selectedStart.stop_id,
+          stop_name: selectedStart.stop_name || '',
+        },
+      };
+    }
+
+    // 11. Find itinerary
+    const itineraryResult = this.findItinerary(
+      selectedStart.stop_id,
+      selectedEnd.stop_id,
+      date,
+      normalizedTime,
+      {
+        maxTransfers: options?.maxTransfers ?? 3,
+        journeysCount: options?.journeysCount ?? 3,
+      }
+    );
+
+    // 12. Check if no journeys found
+    if (itineraryResult.journeys.length === 0) {
+      // Format date for display
+      const year = date.substring(0, 4);
+      const month = date.substring(4, 6);
+      const day = date.substring(6, 8);
+      const formattedDate = `${year}-${month}-${day}`;
+
+      return {
+        status: 'error',
+        errorType: 'NO_ITINERARY_FOUND',
+        message: `No transit route found between '${selectedStart.stop_name}' and '${selectedEnd.stop_name}' on ${formattedDate} at ${normalizedTime}`,
+        startStop: {
+          stop_id: selectedStart.stop_id,
+          stop_name: selectedStart.stop_name || '',
+        },
+        endStop: {
+          stop_id: selectedEnd.stop_id,
+          stop_name: selectedEnd.stop_name || '',
+        },
+        date,
+        departureTime: normalizedTime,
+        possibleReasons: [
+          'No service running at this time',
+          'Stops not connected by transit network',
+          'Try a different departure time or date',
+        ],
+      };
+    }
+
+    // 13. Collect all unique stop IDs from journeys
+    const stopIds = new Set<string>();
+    const tripIds = new Set<string>();
+
+    for (const journey of itineraryResult.journeys) {
+      for (const leg of journey.legs) {
+        stopIds.add(leg.startStop);
+        stopIds.add(leg.endStop);
+        if (leg.tripId) tripIds.add(leg.tripId);
+      }
+    }
+
+    // 14. Resolve stop names
+    const stopsData = gtfsInstance.getStops({
+      stopId: Array.from(stopIds),
+      limit: stopIds.size + 10,
+    });
+    const stopMap = new Map<string, Stop>();
+    for (const stop of stopsData) {
+      stopMap.set(stop.stop_id, stop);
+    }
+
+    // 15. Resolve trip headsigns
+    const tripsData = tripIds.size > 0
+      ? gtfsInstance.getTrips({
+          tripId: Array.from(tripIds),
+          limit: tripIds.size + 10,
+        })
+      : [];
+    const tripMap = new Map<string, Trip>();
+    for (const trip of tripsData) {
+      tripMap.set(trip.trip_id, trip);
+    }
+
+    // 16. Build resolved journeys
+    // Note: ScheduledLeg from gtfs-sqljs-itinerary uses startStop/endStop and includes routeShortName directly
+    const resolvedJourneys: ResolvedJourney[] = itineraryResult.journeys.map(journey => {
+      const resolvedLegs: ResolvedLeg[] = journey.legs.map(leg => {
+        const fromStop = stopMap.get(leg.startStop);
+        const toStop = stopMap.get(leg.endStop);
+        const trip = leg.tripId ? tripMap.get(leg.tripId) : undefined;
+
+        const resolvedLeg: ResolvedLeg = {
+          fromStop: {
+            stop_id: leg.startStop,
+            stop_name: fromStop?.stop_name || leg.startStop,
+          },
+          toStop: {
+            stop_id: leg.endStop,
+            stop_name: toStop?.stop_name || leg.endStop,
+          },
+          departureTime: secondsToTimeString(leg.departureTime),
+          arrivalTime: secondsToTimeString(leg.arrivalTime),
+          isTransfer: false, // The library doesn't include transfer legs in ScheduledJourney
+        };
+
+        // Use routeShortName from the leg directly (provided by gtfs-sqljs-itinerary)
+        if (leg.routeShortName) {
+          resolvedLeg.route = {
+            route_id: '', // Not provided by library
+            route_short_name: leg.routeShortName,
+          };
+        }
+
+        if (trip?.trip_headsign) {
+          resolvedLeg.tripHeadsign = trip.trip_headsign;
+        }
+
+        return resolvedLeg;
+      });
+
+      // Calculate transfers (number of legs - 1, since each leg change is a transfer)
+      const transfers = Math.max(0, resolvedLegs.length - 1);
+
+      return {
+        departureTime: secondsToTimeString(journey.departureTime),
+        arrivalTime: secondsToTimeString(journey.arrivalTime),
+        totalDuration: Math.round(journey.totalDuration / 60), // Convert to minutes
+        transfers,
+        legs: resolvedLegs,
+      };
+    });
+
+    // 18. Build alternative stops if there are other good matches
+    const alternativeStartStops = startStops.length > 1
+      ? startStops.slice(1, 4).map(s => ({
+          stop_id: s.stop_id,
+          stop_name: s.stop_name || '',
+          matchScore: s.matchScore,
+          matchedWords: s.matchedWords,
+        }))
+      : undefined;
+
+    const alternativeEndStops = endStops.length > 1
+      ? endStops.slice(1, 4).map(s => ({
+          stop_id: s.stop_id,
+          stop_name: s.stop_name || '',
+          matchScore: s.matchScore,
+          matchedWords: s.matchedWords,
+        }))
+      : undefined;
+
+    // 19. Return success response
+    return {
+      status: 'success',
+      startStop: {
+        stop_id: selectedStart.stop_id,
+        stop_name: selectedStart.stop_name || '',
+        matchScore: selectedStart.matchScore,
+        matchedWords: selectedStart.matchedWords,
+      },
+      endStop: {
+        stop_id: selectedEnd.stop_id,
+        stop_name: selectedEnd.stop_name || '',
+        matchScore: selectedEnd.matchScore,
+        matchedWords: selectedEnd.matchedWords,
+      },
+      journeys: resolvedJourneys,
+      alternativeStartStops,
+      alternativeEndStops,
     };
   },
 
