@@ -122,7 +122,7 @@ export function startSpeechRecognition(language: Language = 'fr'): Promise<strin
 /**
  * Get available voices, waiting for them to load if necessary
  */
-function getVoices(): Promise<SpeechSynthesisVoice[]> {
+export function getVoices(): Promise<SpeechSynthesisVoice[]> {
   return new Promise((resolve) => {
     const voices = window.speechSynthesis.getVoices();
     if (voices.length > 0) {
@@ -133,7 +133,6 @@ function getVoices(): Promise<SpeechSynthesisVoice[]> {
     // Voices not loaded yet, wait for them
     const handleVoicesChanged = () => {
       const loadedVoices = window.speechSynthesis.getVoices();
-      console.log('[TTS] Voices loaded:', loadedVoices.length);
       resolve(loadedVoices);
     };
 
@@ -142,14 +141,47 @@ function getVoices(): Promise<SpeechSynthesisVoice[]> {
     // Fallback timeout in case voiceschanged never fires
     setTimeout(() => {
       const fallbackVoices = window.speechSynthesis.getVoices();
-      console.log('[TTS] Voices fallback:', fallbackVoices.length);
       resolve(fallbackVoices);
     }, 100);
   });
 }
 
 /**
- * Find the best voice for a language
+ * Get voices filtered by language, sorted with Google voices first
+ * For French, prioritizes fr-FR over other French variants
+ */
+export function getVoicesForLanguage(voices: SpeechSynthesisVoice[], language: Language): SpeechSynthesisVoice[] {
+  const targetLang = SPEECH_LANGUAGE_MAP[language];
+  const langPrefix = targetLang.split('-')[0];
+
+  // Filter voices that match the language
+  const matchingVoices = voices.filter(v => v.lang.startsWith(langPrefix));
+
+  // Sort: Google voices first, then exact lang match (e.g., fr-FR), then others
+  return matchingVoices.sort((a, b) => {
+    const aIsGoogle = a.name.toLowerCase().includes('google') ? 0 : 1;
+    const bIsGoogle = b.name.toLowerCase().includes('google') ? 0 : 1;
+    if (aIsGoogle !== bIsGoogle) return aIsGoogle - bIsGoogle;
+
+    // For exact language match priority
+    const aExact = a.lang === targetLang ? 0 : 1;
+    const bExact = b.lang === targetLang ? 0 : 1;
+    if (aExact !== bExact) return aExact - bExact;
+
+    // Sort by name
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/**
+ * Find a voice by name from the available voices
+ */
+export function findVoiceByName(voices: SpeechSynthesisVoice[], name: string): SpeechSynthesisVoice | null {
+  return voices.find(v => v.name === name) || null;
+}
+
+/**
+ * Find the best voice for a language (used as fallback)
  * Prefers Google voices as they are more reliable in Chrome
  */
 function findVoiceForLanguage(voices: SpeechSynthesisVoice[], lang: string): SpeechSynthesisVoice | null {
@@ -157,69 +189,57 @@ function findVoiceForLanguage(voices: SpeechSynthesisVoice[], lang: string): Spe
 
   // First priority: Google voice with exact language match
   let voice = voices.find(v => v.name.toLowerCase().includes('google') && v.lang === lang);
-  if (voice) {
-    console.log('[TTS] Found Google voice with exact match:', voice.name);
-    return voice;
-  }
+  if (voice) return voice;
 
   // Second priority: Google voice with language prefix match
   voice = voices.find(v => v.name.toLowerCase().includes('google') && v.lang.startsWith(langPrefix));
-  if (voice) {
-    console.log('[TTS] Found Google voice with prefix match:', voice.name);
-    return voice;
-  }
+  if (voice) return voice;
 
   // Third priority: Any voice with exact language match
   voice = voices.find(v => v.lang === lang);
-  if (voice) {
-    console.log('[TTS] Found system voice with exact match:', voice.name);
-    return voice;
-  }
+  if (voice) return voice;
 
   // Fourth priority: Any voice with language prefix match
   voice = voices.find(v => v.lang.startsWith(langPrefix));
-  if (voice) {
-    console.log('[TTS] Found system voice with prefix match:', voice.name);
-    return voice;
-  }
+  if (voice) return voice;
 
   // Fall back to any available voice
-  console.log('[TTS] No matching voice found, using fallback');
   return voices[0] || null;
 }
 
 /**
  * Speak text using Web Speech Synthesis
+ * @param text - Text to speak
+ * @param language - Language code
+ * @param voiceName - Optional specific voice name to use
  */
-export async function speak(text: string, language: Language = 'fr'): Promise<void> {
-  console.log('[TTS] speak() called with text length:', text.length);
-
+export async function speak(text: string, language: Language = 'fr', voiceName?: string | null): Promise<void> {
   if (!isSpeechSynthesisSupported()) {
-    console.error('[TTS] Speech Synthesis not supported');
     throw new Error('Speech Synthesis not supported');
   }
 
   // Cancel any ongoing speech
-  console.log('[TTS] Cancelling any ongoing speech');
   window.speechSynthesis.cancel();
 
   // Get available voices
   const voices = await getVoices();
-  console.log('[TTS] Available voices:', voices.map(v => `${v.name} (${v.lang})`).join(', '));
 
-  // Find a voice for the language
-  const targetLang = SPEECH_LANGUAGE_MAP[language];
-  const voice = findVoiceForLanguage(voices, targetLang);
-  console.log('[TTS] Selected voice:', voice ? `${voice.name} (${voice.lang})` : 'none');
+  // Find voice: use specified voice name or fall back to auto-selection
+  let voice: SpeechSynthesisVoice | null = null;
+  if (voiceName) {
+    voice = findVoiceByName(voices, voiceName);
+  }
+  if (!voice) {
+    const targetLang = SPEECH_LANGUAGE_MAP[language];
+    voice = findVoiceForLanguage(voices, targetLang);
+  }
 
   if (!voice) {
-    console.error('[TTS] No voice available for language:', targetLang);
-    throw new Error(`No voice available for language: ${targetLang}`);
+    throw new Error(`No voice available for language: ${language}`);
   }
 
   // Remove markdown formatting that would be read aloud
   const cleanedText = text.replace(/\*\*/g, '');
-  console.log('[TTS] Cleaned text:', cleanedText.substring(0, 100) + '...');
 
   return new Promise((resolve, reject) => {
     const utterance = new SpeechSynthesisUtterance(cleanedText);
@@ -229,19 +249,9 @@ export async function speak(text: string, language: Language = 'fr'): Promise<vo
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
 
-    console.log('[TTS] Created utterance with voice:', voice.name, 'lang:', utterance.lang);
-
-    utterance.onstart = () => {
-      console.log('[TTS] Speech started');
-    };
-
-    utterance.onend = () => {
-      console.log('[TTS] Speech ended normally');
-      resolve();
-    };
+    utterance.onend = () => resolve();
 
     utterance.onerror = (event) => {
-      console.error('[TTS] Speech error:', event.error);
       // Ignore 'interrupted' and 'canceled' errors as they happen when we cancel
       if (event.error === 'interrupted' || event.error === 'canceled') {
         resolve();
@@ -252,22 +262,12 @@ export async function speak(text: string, language: Language = 'fr'): Promise<vo
 
     // Chrome bug workaround: small delay after cancel before speaking
     setTimeout(() => {
-      console.log('[TTS] After delay - calling speechSynthesis.speak()');
-      console.log('[TTS] speechSynthesis.speaking:', window.speechSynthesis.speaking);
-      console.log('[TTS] speechSynthesis.paused:', window.speechSynthesis.paused);
-      console.log('[TTS] speechSynthesis.pending:', window.speechSynthesis.pending);
-
       // Resume in case it's paused (Chrome bug)
       if (window.speechSynthesis.paused) {
-        console.log('[TTS] Resuming paused synthesis');
         window.speechSynthesis.resume();
       }
 
       window.speechSynthesis.speak(utterance);
-
-      console.log('[TTS] After speak() - speaking:', window.speechSynthesis.speaking);
-      console.log('[TTS] After speak() - paused:', window.speechSynthesis.paused);
-      console.log('[TTS] After speak() - pending:', window.speechSynthesis.pending);
 
       // Chrome bug: sometimes speech gets stuck, use a workaround
       // by periodically calling resume()
@@ -277,7 +277,6 @@ export async function speak(text: string, language: Language = 'fr'): Promise<vo
           return;
         }
         if (window.speechSynthesis.paused) {
-          console.log('[TTS] Resuming paused synthesis (interval)');
           window.speechSynthesis.resume();
         }
       }, 100);
