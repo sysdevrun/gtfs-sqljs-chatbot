@@ -205,7 +205,7 @@ src/
 
 ## LLM Tools Reference
 
-Seven tools are exposed to Claude for querying GTFS data. This section documents each tool's purpose, input parameters, and output types.
+Eight tools are exposed to Claude for querying GTFS data. This section documents each tool's purpose, input parameters, and output types.
 
 ### 1. getCurrentDateTime
 
@@ -372,7 +372,7 @@ Seven tools are exposed to Claude for querying GTFS data. This section documents
 
 ### 7. findItinerary
 
-**Purpose**: Find transit itineraries between two stops with transfers.
+**Purpose**: Low-level tool to find transit itineraries between two stops with transfers. **Prefer `findItineraryByName` instead**, which handles name resolution automatically.
 
 **Input**:
 ```typescript
@@ -416,11 +416,79 @@ Seven tools are exposed to Claude for querying GTFS data. This section documents
 
 ---
 
+### 8. findItineraryByName (PREFERRED)
+
+**Purpose**: High-level tool for finding transit itineraries using stop names. Combines stop search, itinerary computation, and name resolution in a single call. Returns fully resolved data ready for presentation.
+
+**Input**:
+```typescript
+{
+  startName: string;        // REQUIRED - origin stop name (fuzzy matching)
+  endName: string;          // REQUIRED - destination stop name (fuzzy matching)
+  date: string;             // REQUIRED - YYYYMMDD
+  departureTime: string;    // REQUIRED - "HH:MM:SS"
+  maxTransfers?: number;    // Max transfers allowed (default: 3)
+  journeysCount?: number;   // Number of options to return (default: 3)
+}
+```
+
+**Output (Success)**:
+```typescript
+{
+  status: "success";
+  startStop: {
+    stop_id: string;
+    stop_name: string;
+    matchScore: number;
+    matchedWords: string[];
+  };
+  endStop: {
+    stop_id: string;
+    stop_name: string;
+    matchScore: number;
+    matchedWords: string[];
+  };
+  journeys: Array<{
+    departureTime: string;      // "HH:MM:SS"
+    arrivalTime: string;        // "HH:MM:SS"
+    totalDuration: number;      // Minutes
+    transfers: number;
+    legs: Array<{
+      fromStop: { stop_id: string; stop_name: string };
+      toStop: { stop_id: string; stop_name: string };
+      route?: {
+        route_id: string;
+        route_short_name: string;
+        route_long_name?: string;
+      };
+      tripHeadsign?: string;
+      departureTime: string;
+      arrivalTime: string;
+      isTransfer: boolean;
+    }>;
+  }>;
+  alternativeStartStops?: Array<{ stop_id: string; stop_name: string; matchScore: number }>;
+  alternativeEndStops?: Array<{ stop_id: string; stop_name: string; matchScore: number }>;
+}
+```
+
+**Output (Error)**: Structured errors with explicit types:
+- `START_STOP_NOT_FOUND` - No stop matches the start name
+- `END_STOP_NOT_FOUND` - No stop matches the end name
+- `BOTH_STOPS_NOT_FOUND` - Neither stop name found
+- `AMBIGUOUS_START_STOP` - Multiple stops match start name equally
+- `AMBIGUOUS_END_STOP` - Multiple stops match end name equally
+- `NO_ITINERARY_FOUND` - Stops found but no route between them
+- `SAME_START_AND_END` - Start and end resolve to same stop
+- `INVALID_DATE_TIME` - Bad date/time format
+
+---
+
 ## Tool Call Architecture
 
-### Itinerary Planning Flow
+### Itinerary Planning Flow (PREFERRED)
 
-When a user asks for an itinerary between two stop names, the LLM must orchestrate **multiple tool calls** in sequence:
+Use `findItineraryByName` for the simplest approach - only **2 tool calls** required:
 
 ```
 User: "How do I get from Gare Centrale to Place Liberté?"
@@ -434,55 +502,42 @@ User: "How do I get from Gare Centrale to Place Liberté?"
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Step 2: Find origin stop ID (parallel with Step 3)              │
+│ Step 2: Find itinerary with names (handles everything)          │
 │                                                                 │
-│   Call: searchStopsByWords({ query: "Gare Centrale" })          │
-│   Returns: [{ stop_id: "STOP_001", stop_name: "Gare Centrale",  │
-│               matchScore: 2 }, ...]                             │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────────────────────────────────────────┐
-│ Step 3: Find destination stop ID (parallel with Step 2)         │
-│                                                                 │
-│   Call: searchStopsByWords({ query: "Place Liberté" })          │
-│   Returns: [{ stop_id: "STOP_042", stop_name: "Place Liberté",  │
-│               matchScore: 2 }, ...]                             │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ Step 4: Find itinerary using stop IDs                           │
-│                                                                 │
-│   Call: findItinerary({                                         │
-│     startStopId: "STOP_001",                                    │
-│     endStopId: "STOP_042",                                      │
+│   Call: findItineraryByName({                                   │
+│     startName: "Gare Centrale",                                 │
+│     endName: "Place Liberté",                                   │
 │     date: "20251203",                                           │
-│     departureTime: "14:30:00",                                  │
-│     journeysCount: 3                                            │
+│     departureTime: "14:30:00"                                   │
 │   })                                                            │
-│   Returns: { journeys: [...], paths: [...] }                    │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ Step 5 (REQUIRED): Resolve stop IDs to names                    │
-│                                                                 │
-│   Call: getStops({ stopId: ["STOP_001", "STOP_042", ...] })     │
-│   (Include all fromStopId/toStopId from journey legs)           │
-│   Returns: [{ stop_id: "STOP_001", stop_name: "Gare Centrale",  │
-│               ... }, ...]                                       │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ Step 6 (optional): Get route details for user-friendly names    │
-│                                                                 │
-│   Call: getRoutes({ routeId: ["ROUTE_A", "ROUTE_B"] })          │
-│   Returns: [{ route_short_name: "A1", ... }, ...]               │
+│   Returns: {                                                    │
+│     status: "success",                                          │
+│     startStop: { stop_name: "Gare Centrale", ... },             │
+│     endStop: { stop_name: "Place Liberté", ... },               │
+│     journeys: [{ legs: [{ fromStop: {...}, route: {...} }] }]   │
+│   }                                                             │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Call Order Summary
+### Preferred Call Order
+
+| Step | Tool | Purpose | Dependencies |
+|------|------|---------|--------------|
+| 1 | `getCurrentDateTime` | Get date/time for filters | None (always first) |
+| 2 | `findItineraryByName` | Find itinerary with fully resolved names | Step 1 |
+
+### Benefits of findItineraryByName
+
+- **2 calls instead of 6**: No need for separate stop search, itinerary, and name resolution
+- **Structured errors**: Clear error types (stop not found, ambiguous, no route, etc.)
+- **Ready for presentation**: All stop names, route names, and trip headsigns included
+- **Fuzzy matching**: Handles incomplete or misspelled stop names
+
+---
+
+### Legacy Flow (using findItinerary)
+
+If you need more control, you can use the low-level `findItinerary` tool, but it requires **6 tool calls**:
 
 | Step | Tool | Purpose | Dependencies |
 |------|------|---------|--------------|
@@ -493,13 +548,7 @@ User: "How do I get from Gare Centrale to Place Liberté?"
 | 5 | `getStops` | **REQUIRED**: Resolve stop IDs to names | Step 4 |
 | 6 | `getRoutes` | Get human-readable route names | Step 4 (optional) |
 
-### Important: Stop Name Resolution
-
-**`findItinerary` does NOT return stop names** - it only returns stop IDs (`fromStopId`, `toStopId` in each leg). After calling `findItinerary`, the LLM **must call `getStops`** to resolve these IDs to human-readable names.
-
-This is especially important for:
-- Presenting the origin and destination stops
-- **Mentioning transfer stop names** (required by the system prompt)
+**Note**: `findItinerary` does NOT return stop names - only stop IDs. You **must call `getStops`** to resolve IDs to human-readable names for presentation.
 
 ### Other Common Query Patterns
 

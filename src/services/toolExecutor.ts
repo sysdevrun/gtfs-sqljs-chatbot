@@ -1,7 +1,7 @@
 import type { GtfsWorkerApi } from '../workers/gtfs.worker';
 import type { StopFilters, RouteFilters, TripFilters, StopTimeFilters } from '../types';
 
-export type ToolName = 'getCurrentDateTime' | 'getStops' | 'getRoutes' | 'getTrips' | 'getStopTimes' | 'searchStopsByWords' | 'findItinerary';
+export type ToolName = 'getCurrentDateTime' | 'getStops' | 'getRoutes' | 'getTrips' | 'getStopTimes' | 'searchStopsByWords' | 'findItinerary' | 'findItineraryByName';
 
 export interface ToolInput {
   [key: string]: unknown;
@@ -167,6 +167,21 @@ export async function executeTool(
         if (input.maxTransfers !== undefined) options.maxTransfers = Number(input.maxTransfers);
         if (input.journeysCount !== undefined) options.journeysCount = Number(input.journeysCount);
         result = await gtfsApi.findItinerary(startStopId, endStopId, date, departureTime, options);
+        break;
+      }
+
+      case 'findItineraryByName': {
+        const startName = String(input.startName || '');
+        const endName = String(input.endName || '');
+        const date = String(input.date || '');
+        const departureTime = String(input.departureTime || '');
+        const options: {
+          maxTransfers?: number;
+          journeysCount?: number;
+        } = {};
+        if (input.maxTransfers !== undefined) options.maxTransfers = Number(input.maxTransfers);
+        if (input.journeysCount !== undefined) options.journeysCount = Number(input.journeysCount);
+        result = await gtfsApi.findItineraryByName(startName, endName, date, departureTime, options);
         break;
       }
 

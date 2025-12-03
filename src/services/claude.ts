@@ -132,7 +132,7 @@ export const GTFS_TOOLS: Tool[] = [
   {
     name: 'findItinerary',
     description:
-      'Find transit itineraries between two stops. Returns scheduled journeys with transfers, departure/arrival times, and route information. Use this when a user wants to travel from one location to another. First search for stops to get stop IDs, then use this tool to find possible itineraries.',
+      'Low-level tool to find transit itineraries between two stops using stop IDs. Returns raw data that requires additional calls to resolve names. PREFER using findItineraryByName instead, which handles name resolution automatically.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -162,6 +162,41 @@ export const GTFS_TOOLS: Tool[] = [
         },
       },
       required: ['startStopId', 'endStopId', 'date', 'departureTime'],
+    },
+  },
+  {
+    name: 'findItineraryByName',
+    description:
+      'PREFERRED tool for finding transit itineraries. Accepts stop names (fuzzy matching supported) instead of IDs. Returns fully resolved data with stop names, route names, and trip headsigns ready for presentation. Use this tool when a user wants to travel from one location to another. Call getCurrentDateTime first to get the date and time.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        startName: {
+          type: 'string',
+          description: 'The starting stop name (fuzzy matching supported). Example: "Gare Centrale", "Centre Ville"',
+        },
+        endName: {
+          type: 'string',
+          description: 'The destination stop name (fuzzy matching supported). Example: "Place Liberté", "Aéroport"',
+        },
+        date: {
+          type: 'string',
+          description: 'REQUIRED: Date in YYYYMMDD format. Get this from getCurrentDateTime first.',
+        },
+        departureTime: {
+          type: 'string',
+          description: 'Departure time in HH:MM:SS format (e.g., "14:30:00"). Get current time from getCurrentDateTime if user wants to leave now.',
+        },
+        maxTransfers: {
+          type: 'number',
+          description: 'Maximum number of transfers allowed (default: 3)',
+        },
+        journeysCount: {
+          type: 'number',
+          description: 'Number of journey options to return (default: 3)',
+        },
+      },
+      required: ['startName', 'endName', 'date', 'departureTime'],
     },
   },
 ];
