@@ -203,87 +203,300 @@ src/
 6. Worker ready, tools available for execution
 ```
 
-## Tool Definitions
+## LLM Tools Reference
 
-Four tools are exposed to Claude:
+Seven tools are exposed to Claude for querying GTFS data. This section documents each tool's purpose, input parameters, and output types.
 
-### getStops
+### 1. getCurrentDateTime
+
+**Purpose**: Provides current date/time info for GTFS queries. Should be called **first** before any schedule-dependent queries.
+
+**Input**: None (empty object `{}`)
+
+**Output**:
 ```typescript
 {
-  name: "getStops",
-  description: "Search for transit stops/stations. Use to find stop IDs, names, and locations.",
-  input_schema: {
-    type: "object",
-    properties: {
-      stopId: { type: "string", description: "Exact stop ID" },
-      stopCode: { type: "string", description: "Stop code (rider-facing)" },
-      name: { type: "string", description: "Stop name (partial match)" },
-      tripId: { type: "string", description: "Get stops for a specific trip" },
-      limit: { type: "number", description: "Max results (default 10)" }
-    }
-  }
+  date: string;           // "YYYY-MM-DD"
+  time: string;           // "HH:MM:SS"
+  dateYYYYMMDD: string;   // "YYYYMMDD" (for GTFS filters)
+  dayOfWeek: string;      // "monday", "tuesday", etc.
+  isoDateTime: string;    // ISO 8601 format
+  timezone: string;       // e.g., "Europe/Paris"
 }
 ```
 
-### getRoutes
+---
+
+### 2. getRoutes
+
+**Purpose**: Search for transit routes/lines.
+
+**Input**:
 ```typescript
 {
-  name: "getRoutes",
-  description: "Search for transit routes/lines. Use to find route IDs, names, and details.",
-  input_schema: {
-    type: "object",
-    properties: {
-      routeId: { type: "string", description: "Exact route ID" },
-      agencyId: { type: "string", description: "Filter by agency" },
-      limit: { type: "number", description: "Max results (default 10)" }
-    }
-  }
+  routeId?: string | string[];    // Route ID(s) to look up
+  agencyId?: string | string[];   // Filter by agency ID(s)
+  limit?: number;                 // Max results (default: 10)
 }
 ```
 
-### getTrips
+**Output**: `Route[]`
 ```typescript
 {
-  name: "getTrips",
-  description: "Search for trips (scheduled journeys on a route). Use to find trip IDs and schedules.",
-  input_schema: {
-    type: "object",
-    properties: {
-      tripId: { type: "string", description: "Exact trip ID" },
-      routeId: { type: "string", description: "Filter by route ID" },
-      serviceIds: {
-        oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
-        description: "Filter by service ID(s)"
-      },
-      directionId: { type: "number", description: "Direction (0 or 1)" },
-      date: { type: "string", description: "Filter by date (YYYY-MM-DD)" },
-      limit: { type: "number", description: "Max results (default 10)" }
-    }
-  }
+  route_id: string;
+  agency_id?: string;
+  route_short_name?: string;   // Main identifier (e.g., "A1", "42")
+  route_long_name?: string;
+  route_type: number;          // 0=tram, 1=subway, 2=rail, 3=bus...
+  route_color?: string;
+  route_text_color?: string;
 }
 ```
 
-### getStopTimes
+---
+
+### 3. getStops
+
+**Purpose**: Search for transit stops/stations.
+
+**Input**:
 ```typescript
 {
-  name: "getStopTimes",
-  description: "Get scheduled arrival/departure times at stops. Use to find when buses/trains arrive.",
-  input_schema: {
-    type: "object",
-    properties: {
-      tripId: { type: "string", description: "Filter by trip ID" },
-      stopId: { type: "string", description: "Filter by stop ID" },
-      routeId: { type: "string", description: "Filter by route ID" },
-      serviceIds: {
-        oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
-        description: "Filter by service ID(s)"
-      },
-      date: { type: "string", description: "Filter by date (YYYY-MM-DD)" },
-      limit: { type: "number", description: "Max results (default 20)" }
-    }
-  }
+  stopId?: string | string[];   // Stop ID(s) to look up
+  stopCode?: string;            // Rider-facing code
+  name?: string;                // Partial name match
+  tripId?: string;              // Get all stops for a trip
+  limit?: number;               // Max results (default: 10)
 }
 ```
+
+**Output**: `Stop[]`
+```typescript
+{
+  stop_id: string;
+  stop_code?: string;
+  stop_name?: string;
+  stop_lat?: number;
+  stop_lon?: number;
+  parent_station?: string;     // Parent stop ID if this is a child
+  location_type?: number;      // 0=stop, 1=station
+}
+```
+
+---
+
+### 4. searchStopsByWords
+
+**Purpose**: Fuzzy search for stops by splitting query into words. Better for incomplete or partial names.
+
+**Input**:
+```typescript
+{
+  query: string;    // REQUIRED - search query (split into words)
+  limit?: number;   // Max results (default: 20)
+}
+```
+
+**Output**: `StopWithScore[]`
+```typescript
+{
+  // All Stop fields, plus:
+  matchScore: number;      // Number of words matched
+  matchedWords: string[];  // Which words matched
+}
+```
+
+---
+
+### 5. getTrips
+
+**Purpose**: Search for trips (scheduled journeys on a route).
+
+**Input**:
+```typescript
+{
+  tripId?: string | string[];       // Trip ID(s) to look up
+  routeId?: string | string[];      // Filter by route ID(s)
+  serviceIds?: string | string[];   // Filter by service ID(s)
+  directionId?: number;             // Direction (0 or 1)
+  date?: string;                    // YYYYMMDD - auto-resolves active services
+  limit?: number;                   // Max results (default: 10)
+}
+```
+
+**Output**: `Trip[]`
+```typescript
+{
+  trip_id: string;
+  route_id: string;
+  service_id: string;
+  trip_headsign?: string;    // Main identifier for users
+  direction_id?: number;
+  shape_id?: string;
+}
+```
+
+---
+
+### 6. getStopTimes
+
+**Purpose**: Get scheduled arrival/departure times at stops.
+
+**Input**:
+```typescript
+{
+  tripId?: string | string[];       // Filter by trip ID(s)
+  stopId?: string | string[];       // Filter by stop ID(s)
+  routeId?: string | string[];      // Filter by route ID(s)
+  serviceIds?: string | string[];   // Filter by service ID(s)
+  date?: string;                    // YYYYMMDD - auto-resolves active services
+  limit?: number;                   // Max results (default: 20)
+}
+```
+
+**Output**: `StopTime[]`
+```typescript
+{
+  trip_id: string;
+  stop_id: string;
+  arrival_time?: string;     // "HH:MM:SS"
+  departure_time?: string;   // "HH:MM:SS"
+  stop_sequence: number;
+  stop_headsign?: string;
+  pickup_type?: number;
+  drop_off_type?: number;
+}
+```
+
+---
+
+### 7. findItinerary
+
+**Purpose**: Find transit itineraries between two stops with transfers.
+
+**Input**:
+```typescript
+{
+  startStopId: string;      // REQUIRED - origin stop ID
+  endStopId: string;        // REQUIRED - destination stop ID
+  date: string;             // REQUIRED - YYYYMMDD
+  departureTime: string;    // REQUIRED - "HH:MM:SS"
+  maxTransfers?: number;    // Max transfers allowed (default: 3)
+  journeysCount?: number;   // Number of options to return (default: 3)
+}
+```
+
+**Output**:
+```typescript
+{
+  journeys: ScheduledJourney[];  // Array of journey options
+  paths: PathSegment[][];        // Underlying graph paths used
+}
+
+// Where ScheduledJourney contains:
+{
+  legs: JourneyLeg[];        // Each leg of the journey
+  departureTime: number;     // Seconds since midnight
+  arrivalTime: number;
+  totalDuration: number;
+  transfers: number;
+}
+
+// And JourneyLeg contains:
+{
+  fromStopId: string;
+  toStopId: string;
+  routeId?: string;
+  tripId?: string;
+  departureTime: number;
+  arrivalTime: number;
+  isTransfer: boolean;
+}
+```
+
+---
+
+## Tool Call Architecture
+
+### Itinerary Planning Flow
+
+When a user asks for an itinerary between two stop names, the LLM must orchestrate **multiple tool calls** in sequence:
+
+```
+User: "How do I get from Gare Centrale to Place Liberté?"
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 1: Get current date/time                                   │
+│                                                                 │
+│   Call: getCurrentDateTime({})                                  │
+│   Returns: { dateYYYYMMDD: "20251203", time: "14:30:00", ... }  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 2: Find origin stop ID (parallel with Step 3)              │
+│                                                                 │
+│   Call: searchStopsByWords({ query: "Gare Centrale" })          │
+│   Returns: [{ stop_id: "STOP_001", stop_name: "Gare Centrale",  │
+│               matchScore: 2 }, ...]                             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 3: Find destination stop ID (parallel with Step 2)         │
+│                                                                 │
+│   Call: searchStopsByWords({ query: "Place Liberté" })          │
+│   Returns: [{ stop_id: "STOP_042", stop_name: "Place Liberté",  │
+│               matchScore: 2 }, ...]                             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 4: Find itinerary using stop IDs                           │
+│                                                                 │
+│   Call: findItinerary({                                         │
+│     startStopId: "STOP_001",                                    │
+│     endStopId: "STOP_042",                                      │
+│     date: "20251203",                                           │
+│     departureTime: "14:30:00",                                  │
+│     journeysCount: 3                                            │
+│   })                                                            │
+│   Returns: { journeys: [...], paths: [...] }                    │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 5 (optional): Get route details for user-friendly names    │
+│                                                                 │
+│   Call: getRoutes({ routeId: ["ROUTE_A", "ROUTE_B"] })          │
+│   Returns: [{ route_short_name: "A1", ... }, ...]               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Call Order Summary
+
+| Step | Tool | Purpose | Dependencies |
+|------|------|---------|--------------|
+| 1 | `getCurrentDateTime` | Get date/time for filters | None (always first) |
+| 2 | `searchStopsByWords` | Resolve origin name → ID | None |
+| 3 | `searchStopsByWords` | Resolve destination name → ID | None (parallel with 2) |
+| 4 | `findItinerary` | Compute journey options | Steps 1, 2, 3 |
+| 5 | `getRoutes` | Get human-readable route names | Step 4 (optional) |
+
+### Other Common Query Patterns
+
+**Finding next departures at a stop:**
+1. `getCurrentDateTime()` → get current date/time
+2. `searchStopsByWords({ query: "stop name" })` → find stop ID
+3. `getStopTimes({ stopId: "...", date: "YYYYMMDD" })` → get schedules
+
+**Finding routes serving a stop:**
+1. `searchStopsByWords({ query: "stop name" })` → find stop ID
+2. `getStopTimes({ stopId: "...", limit: 50 })` → get stop times with route IDs
+3. `getRoutes({ routeId: [...unique route IDs] })` → get route details
+
+**Getting full trip schedule:**
+1. `getTrips({ routeId: "...", date: "YYYYMMDD" })` → find trip IDs
+2. `getStopTimes({ tripId: "..." })` → get all stops for that trip
 
 ## State Management (Zustand)
 
