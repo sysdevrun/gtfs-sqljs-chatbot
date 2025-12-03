@@ -465,7 +465,17 @@ User: "How do I get from Gare Centrale to Place Liberté?"
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Step 5 (optional): Get route details for user-friendly names    │
+│ Step 5 (REQUIRED): Resolve stop IDs to names                    │
+│                                                                 │
+│   Call: getStops({ stopId: ["STOP_001", "STOP_042", ...] })     │
+│   (Include all fromStopId/toStopId from journey legs)           │
+│   Returns: [{ stop_id: "STOP_001", stop_name: "Gare Centrale",  │
+│               ... }, ...]                                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 6 (optional): Get route details for user-friendly names    │
 │                                                                 │
 │   Call: getRoutes({ routeId: ["ROUTE_A", "ROUTE_B"] })          │
 │   Returns: [{ route_short_name: "A1", ... }, ...]               │
@@ -480,7 +490,16 @@ User: "How do I get from Gare Centrale to Place Liberté?"
 | 2 | `searchStopsByWords` | Resolve origin name → ID | None |
 | 3 | `searchStopsByWords` | Resolve destination name → ID | None (parallel with 2) |
 | 4 | `findItinerary` | Compute journey options | Steps 1, 2, 3 |
-| 5 | `getRoutes` | Get human-readable route names | Step 4 (optional) |
+| 5 | `getStops` | **REQUIRED**: Resolve stop IDs to names | Step 4 |
+| 6 | `getRoutes` | Get human-readable route names | Step 4 (optional) |
+
+### Important: Stop Name Resolution
+
+**`findItinerary` does NOT return stop names** - it only returns stop IDs (`fromStopId`, `toStopId` in each leg). After calling `findItinerary`, the LLM **must call `getStops`** to resolve these IDs to human-readable names.
+
+This is especially important for:
+- Presenting the origin and destination stops
+- **Mentioning transfer stop names** (required by the system prompt)
 
 ### Other Common Query Patterns
 
