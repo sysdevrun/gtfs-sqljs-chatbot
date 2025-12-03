@@ -4,6 +4,7 @@ import { SettingsTab } from './SettingsTab';
 import { DebugTab } from './DebugTab';
 import { useGtfsWorker } from '../hooks/useGtfsWorker';
 import { useSettingsStore } from '../stores/settingsStore';
+import { getVoices, getVoicesForLanguage } from '../services/speech';
 import type { AppTab } from '../types';
 
 const tabs: { id: AppTab; label: string; ariaLabel: string }[] = [
@@ -42,8 +43,12 @@ function removeApiKeyFromHash(): void {
 
 export function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('voice');
+  const [voiceReady, setVoiceReady] = useState(false);
   const { api, loadingState, progress, error, reload } = useGtfsWorker();
   const setApiKey = useSettingsStore((s) => s.setApiKey);
+  const language = useSettingsStore((s) => s.language);
+  const voiceName = useSettingsStore((s) => s.voiceName);
+  const setVoiceName = useSettingsStore((s) => s.setVoiceName);
 
   // Check for API key in URL hash on mount
   useEffect(() => {
@@ -53,6 +58,44 @@ export function App() {
       removeApiKeyFromHash();
     }
   }, [setApiKey]);
+
+  // Auto-select voice on page load if none selected
+  useEffect(() => {
+    let mounted = true;
+
+    const initVoice = async () => {
+      const allVoices = await getVoices();
+      if (!mounted) return;
+
+      const voicesForLang = getVoicesForLanguage(allVoices, language);
+
+      // Check if current voice is still valid for the language
+      const currentVoiceValid = voiceName && voicesForLang.some(v => v.name === voiceName);
+
+      if (!currentVoiceValid && voicesForLang.length > 0) {
+        // Auto-select first voice (already sorted: Google first, exact lang match first)
+        setVoiceName(voicesForLang[0].name);
+      }
+
+      setVoiceReady(true);
+    };
+
+    initVoice();
+
+    return () => { mounted = false; };
+  }, [language, voiceName, setVoiceName]);
+
+  // Show loading indicator while voice is being initialized
+  if (!voiceReady) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Initializing voice...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

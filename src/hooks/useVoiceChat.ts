@@ -55,6 +55,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
 
   const apiKey = useSettingsStore((s) => s.apiKey);
   const language = useSettingsStore((s) => s.language);
+  const voiceName = useSettingsStore((s) => s.voiceName);
   const model = useSettingsStore((s) => s.model);
   const systemPrompt = useSettingsStore((s) => s.systemPrompt);
   const { messages, addMessage, setProcessing, setLastResponse, reset } =
@@ -226,7 +227,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
       if (response) {
         setState('speaking');
         setToolStatus(prev => ({ ...prev, waitingFor: 'speaking' }));
-        await speak(response, language);
+        await speak(response, language, voiceName);
       }
 
       setState('idle');
@@ -301,7 +302,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
       if (response) {
         setState('speaking');
         setToolStatus(prev => ({ ...prev, waitingFor: 'speaking' }));
-        await speak(response, language);
+        await speak(response, language, voiceName);
       }
 
       setState('idle');
@@ -323,6 +324,7 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
   }, [
     apiKey,
     language,
+    voiceName,
     gtfsApi,
     messages,
     addMessage,
@@ -335,29 +337,19 @@ export function useVoiceChat(gtfsApi: Comlink.Remote<GtfsWorkerApi> | null) {
 
   const speakLastResponse = useCallback(async () => {
     const { lastResponse } = useChatStore.getState();
-    console.log('[useVoiceChat] speakLastResponse called, lastResponse length:', lastResponse?.length);
-    if (!lastResponse) {
-      console.log('[useVoiceChat] No lastResponse, returning');
-      return;
-    }
+    if (!lastResponse) return;
 
-    console.log('[useVoiceChat] Calling stopSpeaking()');
     stopSpeaking();
     setState('speaking');
     setToolStatus(prev => ({ ...prev, waitingFor: 'speaking' }));
 
     try {
-      console.log('[useVoiceChat] Calling speak()');
-      await speak(lastResponse, language);
-      console.log('[useVoiceChat] speak() completed');
-    } catch (error) {
-      console.error('[useVoiceChat] speak() error:', error);
+      await speak(lastResponse, language, voiceName);
     } finally {
-      console.log('[useVoiceChat] Setting state to idle');
       setState('idle');
       setToolStatus(prev => ({ ...prev, waitingFor: 'idle' }));
     }
-  }, [language]);
+  }, [language, voiceName]);
 
   const stopChat = useCallback(() => {
     stopSpeaking();

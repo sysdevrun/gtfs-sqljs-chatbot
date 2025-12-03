@@ -1,6 +1,7 @@
 import { useState, useEffect, useId } from 'react';
 import { useSettingsStore, LANGUAGE_LABELS, MODEL_LABELS, MODEL_PRICING, DEFAULT_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT_EN } from '../stores/settingsStore';
 import type { Language, Model } from '../stores/settingsStore';
+import { getVoices, getVoicesForLanguage } from '../services/speech';
 
 interface SettingsTabProps {
   onGtfsUrlChange: () => void;
@@ -17,28 +18,60 @@ function buildUrlWithApiKey(apiKey: string): string {
 }
 
 export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
-  const { apiKey, gtfsUrl, language, model, systemPrompt, setApiKey, setGtfsUrl, setLanguage, setModel, setSystemPrompt } = useSettingsStore();
+  const { apiKey, gtfsUrl, language, voiceName, model, systemPrompt, setApiKey, setGtfsUrl, setLanguage, setVoiceName, setModel, setSystemPrompt } = useSettingsStore();
   const apiKeyDescId = useId();
   const gtfsUrlDescId = useId();
   const languageDescId = useId();
+  const voiceDescId = useId();
   const modelDescId = useId();
   const systemPromptDescId = useId();
 
   const [localApiKey, setLocalApiKey] = useState(apiKey);
   const [localGtfsUrl, setLocalGtfsUrl] = useState(gtfsUrl);
   const [localLanguage, setLocalLanguage] = useState<Language>(language);
+  const [localVoiceName, setLocalVoiceName] = useState<string | null>(voiceName);
   const [localModel, setLocalModel] = useState<Model>(model);
   const [localSystemPrompt, setLocalSystemPrompt] = useState(systemPrompt);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Available voices for the selected language
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voicesLoading, setVoicesLoading] = useState(true);
+
+  // Load voices when component mounts or language changes
+  useEffect(() => {
+    let mounted = true;
+    setVoicesLoading(true);
+
+    getVoices().then((allVoices) => {
+      if (!mounted) return;
+
+      const voicesForLang = getVoicesForLanguage(allVoices, localLanguage);
+      setAvailableVoices(voicesForLang);
+
+      // Auto-select first voice if none selected or current voice not available for this language
+      const currentVoiceAvailable = voicesForLang.some(v => v.name === localVoiceName);
+      if (!localVoiceName || !currentVoiceAvailable) {
+        if (voicesForLang.length > 0) {
+          setLocalVoiceName(voicesForLang[0].name);
+        }
+      }
+
+      setVoicesLoading(false);
+    });
+
+    return () => { mounted = false; };
+  }, [localLanguage, localVoiceName]);
+
   useEffect(() => {
     setLocalApiKey(apiKey);
     setLocalGtfsUrl(gtfsUrl);
     setLocalLanguage(language);
+    setLocalVoiceName(voiceName);
     setLocalModel(model);
     setLocalSystemPrompt(systemPrompt);
-  }, [apiKey, gtfsUrl, language, model, systemPrompt]);
+  }, [apiKey, gtfsUrl, language, voiceName, model, systemPrompt]);
 
   const handleSave = () => {
     const urlChanged = localGtfsUrl !== gtfsUrl;
@@ -46,6 +79,7 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
     setApiKey(localApiKey);
     setGtfsUrl(localGtfsUrl);
     setLanguage(localLanguage);
+    setVoiceName(localVoiceName);
     setModel(localModel);
     setSystemPrompt(localSystemPrompt);
 
@@ -68,6 +102,8 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
 
   const handleLanguageChange = (newLanguage: Language) => {
     setLocalLanguage(newLanguage);
+    // Reset voice selection - will be auto-selected by useEffect
+    setLocalVoiceName(null);
     // Offer to update system prompt if it's the default for the old language
     const oldDefault = localLanguage === 'fr' ? DEFAULT_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT_EN;
     if (localSystemPrompt === oldDefault) {
@@ -127,6 +163,39 @@ export function SettingsTab({ onGtfsUrlChange }: SettingsTabProps) {
         </select>
         <p id={languageDescId} className="text-xs text-gray-500">
           Langue pour la reconnaissance vocale et la synthese vocale. / Language for voice recognition and synthesis.
+        </p>
+      </div>
+
+      {/* Voice */}
+      <div className="space-y-2">
+        <label
+          htmlFor="voice"
+          className="block text-sm font-medium text-gray-700"
+        >
+          Voix / Voice
+        </label>
+        <select
+          id="voice"
+          value={localVoiceName || ''}
+          onChange={(e) => setLocalVoiceName(e.target.value)}
+          aria-describedby={voiceDescId}
+          disabled={voicesLoading || availableVoices.length === 0}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+        >
+          {voicesLoading ? (
+            <option value="">Chargement des voix...</option>
+          ) : availableVoices.length === 0 ? (
+            <option value="">Aucune voix disponible</option>
+          ) : (
+            availableVoices.map((voice) => (
+              <option key={voice.name} value={voice.name}>
+                {voice.name} ({voice.lang})
+              </option>
+            ))
+          )}
+        </select>
+        <p id={voiceDescId} className="text-xs text-gray-500">
+          Voix utilisee pour la synthese vocale. Google voices sont recommandees. / Voice used for text-to-speech. Google voices are recommended.
         </p>
       </div>
 

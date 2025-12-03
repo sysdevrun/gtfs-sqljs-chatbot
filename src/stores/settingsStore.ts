@@ -95,11 +95,13 @@ interface SettingsState {
   apiKey: string;
   gtfsUrl: string;
   language: Language;
+  voiceName: string | null;
   model: Model;
   systemPrompt: string;
   setApiKey: (key: string) => void;
   setGtfsUrl: (url: string) => void;
   setLanguage: (language: Language) => void;
+  setVoiceName: (voiceName: string | null) => void;
   setModel: (model: Model) => void;
   setSystemPrompt: (prompt: string) => void;
   resetSystemPrompt: () => void;
@@ -111,11 +113,13 @@ export const useSettingsStore = create<SettingsState>()(
       apiKey: '',
       gtfsUrl: DEFAULT_GTFS_URL,
       language: 'fr',
+      voiceName: null,
       model: 'claude-sonnet-4-5-20250929',
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       setApiKey: (apiKey) => set({ apiKey }),
       setGtfsUrl: (gtfsUrl) => set({ gtfsUrl }),
       setLanguage: (language) => set({ language }),
+      setVoiceName: (voiceName) => set({ voiceName }),
       setModel: (model) => set({ model }),
       setSystemPrompt: (systemPrompt) => set({ systemPrompt }),
       resetSystemPrompt: () => {
